@@ -361,6 +361,25 @@ static struct attribute *fpga_mgr_attrs[] = {
 };
 ATTRIBUTE_GROUPS(fpga_mgr);
 
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+static struct fpga_manager *__fpga_mgr_get(struct device *dev)
+{
+	struct fpga_manager *mgr;
+
+	mgr = to_fpga_manager(dev);
+	if (!mgr)
+		goto err_dev;
+
+	if (!try_module_get(dev->parent->driver->owner))
+		goto err_dev;
+
+	return mgr;
+
+err_dev:
+	put_device(dev);
+	return ERR_PTR(-ENODEV);
+}
+#else
 static struct fpga_manager *__fpga_mgr_get(struct device *dev)
 {
 	struct fpga_manager *mgr;
@@ -387,11 +406,44 @@ err_dev:
 	put_device(dev);
 	return ERR_PTR(ret);
 }
+#endif
 
 static int fpga_mgr_dev_match(struct device *dev, const void *data)
 {
 	return dev->parent == data;
 }
+
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+/**
+ * fpga_mgr_lock - Lock FPGA manager for exclusive use
+ * @mgr:	fpga manager
+ *
+ * Given a pointer to FPGA Manager (from fpga_mgr_get() or
+ * of_fpga_mgr_put()) attempt to get the mutex.
+ *
+ * Return: 0 for success or -EBUSY
+*/
+int fpga_mgr_lock(struct fpga_manager *mgr)
+{
+	if (!mutex_trylock(&mgr->ref_mutex)) {
+		dev_err(&mgr->dev, "FPGA manager is in use.\n");
+		return -EBUSY;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(fpga_mgr_lock);
+
+/**
+ * fpga_mgr_unlock - Unlock FPGA manager
+ * @mgr:	fpga manager
+ */
+void fpga_mgr_unlock(struct fpga_manager *mgr)
+{
+	mutex_unlock(&mgr->ref_mutex);
+}
+EXPORT_SYMBOL_GPL(fpga_mgr_unlock);
+#endif
 
 /**
  * fpga_mgr_get - get an exclusive reference to a fpga mgr
