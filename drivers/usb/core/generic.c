@@ -42,6 +42,11 @@ static int is_activesync(struct usb_interface_descriptor *desc)
 		&& desc->bInterfaceProtocol == 1;
 }
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+#include <linux/usb/otg.h>
+extern void send_otg_event(enum usb_otg_event event);
+#endif
+
 int usb_choose_configuration(struct usb_device *udev)
 {
 	int i;
@@ -103,6 +108,10 @@ int usb_choose_configuration(struct usb_device *udev)
 
 		/* Rule out configs that draw too much bus current */
 		if (usb_get_max_power(udev, c) > udev->bus_mA) {
+			#if defined(CONFIG_USBIF_COMPLIANCE)
+				dev_err(&udev->dev, "usb_get_max_power(%d) bus_mA(%d)!\n", usb_get_max_power(udev, c), udev->bus_mA);
+				send_otg_event(OTG_EVENT_DEV_OVER_CURRENT);
+			#endif
 			insufficient_power++;
 			continue;
 		}

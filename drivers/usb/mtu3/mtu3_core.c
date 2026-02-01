@@ -23,6 +23,7 @@
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
+#include <mt-plat/mtk_boot.h>
 
 #include "mtu3.h"
 #include "mtu3_dr.h"
@@ -86,7 +87,11 @@ static inline void mtu3_ss_func_set(struct mtu3 *mtu, bool enable)
 	else
 		mtu3_clrbits(mtu->mac_base, U3D_USB3_CONFIG, USB3_EN);
 
+	#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(mtu->dev, "USB3_EN = %d\n", !!enable);
+	#else
 	dev_dbg(mtu->dev, "USB3_EN = %d\n", !!enable);
+	#endif
 }
 
 /* set/clear U3D HS device soft connect */
@@ -649,14 +654,22 @@ static irqreturn_t mtu3_u3_ltssm_isr(struct mtu3 *mtu)
 	ltssm = mtu3_readl(mbase, U3D_LTSSM_INTR);
 	ltssm &= mtu3_readl(mbase, U3D_LTSSM_INTR_ENABLE);
 	mtu3_writel(mbase, U3D_LTSSM_INTR, ltssm); /* W1C */
+	#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(mtu->dev, "=== LTSSM[%x] ===\n", ltssm);
+	#else
 	dev_dbg(mtu->dev, "=== LTSSM[%x] ===\n", ltssm);
+	#endif
 
 	#ifdef CONFIG_USB_MTU3_PLAT_PHONE
 	if (ltssm & SS_DISABLE_INTR) {
 		/* enable U2 link. after host reset,
 		 *HS/FS EP0 configuration is applied in musb_g_reset
 		 */
+		#if !defined(CONFIG_USBIF_COMPLIANCE)
 		mtu3_hs_softconn_set(mtu, true);
+		#else
+		dev_info(mtu->dev, "SS_DISABLE_INTR Do nothing\n", ltssm);
+		#endif
 	}
 	if (ltssm & ENTER_U0_INTR) {
 		mtu3_printk(K_INFO, "LTSSM: ENTER_U0_INTR\n");
@@ -897,6 +910,7 @@ static void mtu3_hw_exit(struct mtu3 *mtu)
 	mtu3_mem_free(mtu);
 }
 
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 void mtu3_start(struct mtu3 *mtu)
 {
 	void __iomem *mbase = mtu->mac_base;
@@ -913,6 +927,13 @@ void mtu3_start(struct mtu3 *mtu)
 	 */
 	if (mtu->max_speed == USB_SPEED_FULL)
 		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
+
+	if(get_meta_com_type() == META_USB_COM) {
+		mtu->max_speed = USB_SPEED_FULL;
+		mtu3_setbits(mbase, U3D_SSUSB_U3_CTRL_0P, (SSUSB_U3_PORT_PDN | SSUSB_U3_PORT_DIS));
+		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
+	}
+
 	mtu3_regs_init(mtu);
 	/* Initialize the default interrupts */
 	mtu3_intr_enable(mtu);
@@ -921,6 +942,7 @@ void mtu3_start(struct mtu3 *mtu)
 	if (mtu->softconnect)
 		mtu3_dev_on_off(mtu, 1);
 }
+#endif
 
 void mtu3_stop(struct mtu3 *mtu)
 {
@@ -939,6 +961,54 @@ void mtu3_stop(struct mtu3 *mtu)
 	#endif
 
 }
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+/*USB IF Start*/
+#include <mt-plat/charger_class.h>
+struct charger_device *primary_charger;
+
+void mtu3_start(struct mtu3 *mtu)
+{
+	void __iomem *mbase = mtu->mac_base;
+
+	dev_dbg(mtu->dev, "%s devctl 0x%x\n", __func__,
+		mtu3_readl(mbase, U3D_DEVICE_CONTROL));
+
+	mtu3_clrbits(mtu->ippc_base, U3D_SSUSB_IP_PW_CTRL2, SSUSB_IP_DEV_PDN);
+
+	/*
+	 * When disable U2 port, USB2_CSR's register will be reset to
+	 * default value after re-enable it again(HS is enabled by default).
+	 * So if force mac to work as FS, disable HS function.
+	 */
+	if (mtu->max_speed == USB_SPEED_FULL)
+		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
+
+	/* USB IF */
+	mtu3_regs_init(mtu);
+
+	/* Initialize the default interrupts */
+	mtu3_intr_enable(mtu);
+	mtu->is_active = 1;
+
+	if (mtu->softconnect)
+		mtu3_dev_on_off(mtu, 1);
+
+	/*USB IF Start*/
+	if (1) {
+		int ret;
+
+		/* get charger device */
+		primary_charger = get_charger_by_name("primary_chg");
+		dev_info(mtu->dev, "primary_charger<%p>\n", primary_charger);
+
+		/* set force sleep mode */
+		ret = charger_dev_enable_powerpath(primary_charger, false);
+		dev_info(mtu->dev, "charger_dev_enable_powerpath, ret<%d>\n", ret);
+	}
+}
+/*USB IF End*/
+#endif
 
 /*-------------------------------------------------------------------------*/
 

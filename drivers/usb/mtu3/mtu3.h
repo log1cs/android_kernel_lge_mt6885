@@ -82,7 +82,7 @@ struct mtu3_request;
 #define K_DEBUG		7
 
 #ifdef CONFIG_USB_MTU3_PLAT_PHONE
-#define MTU3_U3_IP_SLOT_DEFAULT 2
+#define MTU3_U3_IP_SLOT_DEFAULT 1
 #define MTU3_LTSSM_INTR_EN (U3_RESUME_INTR | U3_LFPS_TMOUT_INTR | \
 		VBUS_FALL_INTR | VBUS_RISE_INTR | \
 		/*RXDET_SUCCESS_INTR |*/ EXIT_U3_INTR | \
@@ -517,4 +517,14 @@ enum cable_mode {
 };
 #endif
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+enum usb_state_enum {
+	USB_SUSPEND = 0,
+	USB_UNCONFIGURED,
+	USB_CONFIGURED
+};
+extern void BATTERY_SetUSBState(int usb_state_value);
+extern void mtu3_sync_with_bat(struct mtu3 *mtu, int usb_state);
+extern void wake_up_bat(void);
+#endif
 #endif

@@ -1302,13 +1302,17 @@ int acm_shortcut(void)
 	char *ptr;
 	char mode = 0;
 
+#ifndef CONFIG_LGE_USB
 #ifdef CONFIG_MTK_BOOT
 	if (get_boot_mode() != META_BOOT)
 		return 0;
 #else
 	return 0;
 #endif
-
+#else
+	return 0;
+#endif
+#if 0 // TD#774 Structurally dead code (UNREACHABLE)
 	ptr = strstr(saved_command_line, TAG_NAME);
 	if (ptr) {
 		mode = *(ptr + strlen(TAG_NAME));
@@ -1321,6 +1325,7 @@ int acm_shortcut(void)
 	} else
 		pr_notice("cat not find \"androidboot.usbconfig=\" in cmdline\n");
 	return 0;
+#endif
 }
 
 static int __init meta_usb_init(void)

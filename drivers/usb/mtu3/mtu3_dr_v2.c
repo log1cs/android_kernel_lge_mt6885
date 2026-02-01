@@ -102,6 +102,18 @@ bool usb_cable_connected(void)
 
 	return connected;
 }
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+void mtu3_sync_with_bat(struct mtu3 *mtu, int usb_state)
+{
+	mtu3_printk(K_INFO, "sync_with_bat usb_state(%d)\n", usb_state);
+#if defined(CONFIG_MTK_CHARGER)
+	BATTERY_SetUSBState(usb_state);
+	wake_up_bat();
+#endif
+}
+EXPORT_SYMBOL_GPL(mtu3_sync_with_bat);
+#endif
 #endif
 
 static bool mtu3_mode_check(enum mtu3_vbus_id_state status)
@@ -196,9 +208,31 @@ static void ssusb_ip_sleep(struct ssusb_mtk *ssusb)
 	mtu3_setbits(ibase, U3D_SSUSB_IP_PW_CTRL0, SSUSB_IP_SW_RST);
 }
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+/*USB IF Start*/
+#include <mt-plat/charger_class.h>
+extern struct charger_device *primary_charger;
+/*USB IF End*/
+#endif
 static void switch_port_to_none(struct ssusb_mtk *ssusb)
 {
 	dev_info(ssusb->dev, "%s\n", __func__);
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	/*USB IF Start*/
+	if (1) {
+		int ret;
+
+		/* get charger device */
+		primary_charger = get_charger_by_name("primary_chg");
+		dev_info(ssusb->dev, "primary_charger<%p>\n", primary_charger);
+
+		/* set default mode */
+		ret = charger_dev_enable_powerpath(primary_charger, true);
+		dev_info(ssusb->dev, "charger_dev_enable_powerpath, ret<%d>\n", ret);
+	}
+	/*USB IF End*/
+#endif
 
 	if (ssusb->is_host) {
 		/* workaround for host handle disconnect follow */
@@ -246,7 +280,28 @@ static void switch_port_to_device(struct ssusb_mtk *ssusb)
 	u32 check_clk = 0;
 	struct mtu3 *mtu = ssusb->u3d;
 
+	#ifdef CONFIG_LGE_USB_TYPE_C
+	dev_info(ssusb->dev, "%s set super speed(%d) \n", __func__, mtu3_speed);
+	#else
 	dev_info(ssusb->dev, "%s\n", __func__);
+	#endif
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	/*USB IF Start*/
+	if (1) {
+		int ret;
+
+		/* get charger device */
+		primary_charger = get_charger_by_name("primary_chg");
+		dev_info(mtu->dev, "primary_charger<%p>\n", primary_charger);
+
+		/* set force sleep mode */
+		ret = charger_dev_enable_powerpath(primary_charger, false);
+		dev_info(mtu->dev, "charger_dev_enable_powerpath, ret<%d>\n", ret);
+	}
+	/*USB IF End*/
+#endif
+
 	ssusb->otg_switch.is_u3_drd = mtu3_speed;
 	if (ssusb->otg_switch.is_u3_drd)
 		mtu->max_speed = USB_SPEED_SUPER;
@@ -388,6 +443,7 @@ void ssusb_set_mailbox(struct otg_switch_mtk *otg_sx,
 			mtu3_printk(K_CRIT, "dr_wq not ready\n");
 			msleep(500);
 		} else {
+			mtu3_printk(K_CRIT, "dr_wq is ready\n");
 			queue_delayed_work(otg_sx->dr_workq,
 				&__otg_sx->dr_work, 0);
 			break;

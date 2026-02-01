@@ -19,6 +19,9 @@
 #include "mtu3.h"
 #include "mtu3_dr.h"
 #include <linux/usb/composite.h>
+#ifdef CONFIG_USB_MTU3_PLAT_PHONE
+#include <mt-plat/mtk_boot.h>
+#endif
 
 void mtu3_req_complete(struct mtu3_ep *mep,
 		     struct usb_request *req, int status)
@@ -616,8 +619,11 @@ static int mtu3_gadget_pullup(struct usb_gadget *gadget, int is_on)
 	spin_unlock_irqrestore(&mtu->lock, flags);
 	#ifdef CONFIG_USB_MTU3_PLAT_PHONE
 	/* Trigger connection when force on*/
-	if (mtu3_cable_mode == CABLE_MODE_FORCEON) {
-		dev_info(mtu->dev, "%s CABLE_MODE_FORCEON\n", __func__);
+	if ((mtu3_cable_mode == CABLE_MODE_FORCEON) ||
+		(get_boot_mode() == META_BOOT) ||
+		(get_boot_mode() == ADVMETA_BOOT)) {
+		dev_info(mtu->dev, "%s CABLE_MODE_FORCEON or META_MODE\n",
+			__func__);
 		ssusb_set_mailbox(&mtu->ssusb->otg_switch,
 			MTU3_VBUS_VALID);
 	}
@@ -838,6 +844,9 @@ void mtu3_gadget_suspend(struct mtu3 *mtu)
 		mtu->gadget_driver->suspend(&mtu->g);
 		spin_lock(&mtu->lock);
 	}
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	mtu3_sync_with_bat(mtu, USB_SUSPEND);	/* announce to the battery */
+#endif
 }
 
 /* called when VBUS drops below session threshold, and in other cases */
@@ -864,6 +873,12 @@ void mtu3_gadget_disconnect(struct mtu3 *mtu)
 void mtu3_gadget_reset(struct mtu3 *mtu)
 {
 	dev_info(mtu->dev, "gadget RESET\n");
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	/* it may greater than 2.5mA , but it should meet the spec's requirement !! */
+	if (!mtu->test_mode)
+		mtu3_sync_with_bat(mtu, USB_UNCONFIGURED);
+#endif
 
 	/* report disconnect, if we didn't flush EP state */
 	if (mtu->g.speed != USB_SPEED_UNKNOWN)
