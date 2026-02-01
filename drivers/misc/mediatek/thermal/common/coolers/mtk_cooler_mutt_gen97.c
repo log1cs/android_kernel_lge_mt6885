@@ -1282,6 +1282,7 @@ static int mtk_cl_scg_off_set_cur_state(struct thermal_cooling_device *cdev,
 	if (clmutt_data.scg_off_state == state)
 		goto end;
 
+	pr_info("[%s] %lu (0: SCG on;  1: SCG off)\n", __func__, state);
 	if (clmutt_send_scg_off_cmd((int)state))
 		clmutt_data.cur_limit = 0;
 	else

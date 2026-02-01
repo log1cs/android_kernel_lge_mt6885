@@ -40,12 +40,32 @@ static unsigned int g_cl_id[BACKLIGHT_COOLER_NR];
 static unsigned int g_backlight_level;
 static unsigned int g_backlight_last_level;
 
+#ifdef CONFIG_LGE_PM_BACKLIGHT_COOLER
+static unsigned int levels[BACKLIGHT_COOLER_NR] = {
+	178,
+	102,
+	25
+};
+#endif
 
 static void mtk_cl_backlight_set_max_brightness_limit(void)
 {
 	if (g_backlight_last_level != g_backlight_level) {
 		mtk_cooler_backlight_dprintk("set brightness level = %d\n",
 				g_backlight_level);
+#ifdef CONFIG_LGE_PM_BACKLIGHT_COOLER
+		{
+			int level = 255;
+			int enable = 0;
+
+			if (g_backlight_level) {
+				level = levels[g_backlight_level - 1];
+				enable = 1;
+			}
+
+			setMaxbrightness(level, enable);
+		}
+#else /* MediaTek */
 		switch (g_backlight_level) {
 		case 0:
 			/* 100% */
@@ -92,6 +112,7 @@ static void mtk_cl_backlight_set_max_brightness_limit(void)
 			#endif
 			break;
 		}
+#endif
 	}
 }
 
@@ -137,9 +158,20 @@ static void mtk_cl_backlight_set_max_brightness_limit(void)
 
 	g_cl_backlight_state[nCoolerId] = state;
 
+#ifdef CONFIG_LGE_PM_BACKLIGHT_COOLER
+	{
+		int level = 0;
+
+		for (i = 0; i < BACKLIGHT_COOLER_NR; i++)
+			if (g_cl_backlight_state[i])
+				level = i + 1;
+		g_backlight_level = level;
+	}
+#else /* MediaTek */
 	g_backlight_level = 0;
 	for (i = 0; i < BACKLIGHT_COOLER_NR; i++)
 		g_backlight_level += g_cl_backlight_state[i];
+#endif
 
 	/* Mark for test */
 	/* if(g_backlight_last_level != g_backlight_level) */
