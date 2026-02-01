@@ -37,6 +37,10 @@
 #include <mt-plat/mrdump.h>
 #include <mrdump_private.h>
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 static struct aee_kernel_api *g_aee_api;
 #define KERNEL_REPORT_LENGTH 344
 
@@ -164,6 +168,10 @@ EXPORT_SYMBOL(aee_kernel_reminding_api);
 void aed_md_exception_api(const int *log, int log_size, const int *phy,
 			int phy_size, const char *detail, const int db_opt)
 {
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	if (detail) lge_set_modem_will(detail);
+#endif
+
 #ifdef CONFIG_MTK_AEE_AED
 	pr_debug("%s\n", __func__);
 	if (g_aee_api) {
