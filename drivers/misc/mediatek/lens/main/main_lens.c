@@ -129,6 +129,8 @@ static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
 	 FP5510E2AF_Release, FP5510E2AF_GetFileName, NULL},
 	{1, AFDRV_DW9718AF, DW9718AF_SetI2Cclient, DW9718AF_Ioctl,
 	 DW9718AF_Release, DW9718AF_GetFileName, NULL},
+	{1, AFDRV_DW9800VAF, DW9800VAF_SetI2Cclient, DW9800VAF_Ioctl,
+	DW9800VAF_Release, DW9800VAF_GetFileName, NULL},
 	{1, AFDRV_GT9764AF, GT9764AF_SetI2Cclient, GT9764AF_Ioctl,
 	GT9764AF_Release, GT9764AF_GetFileName, NULL},
 	{1, AFDRV_LC898212AF, LC898212AF_SetI2Cclient, LC898212AF_Ioctl,
@@ -145,6 +147,8 @@ static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
 	 LC898217AFC_Release, LC898217AFC_GetFileName, NULL},
 	{1, AFDRV_LC898229AF, LC898229AF_SetI2Cclient, LC898229AF_Ioctl,
 	 LC898229AF_Release, LC898229AF_GetFileName, NULL},
+	 {1, AFDRV_OV5645AF, OV5645AF_SetI2Cclient,
+	OV5645AF_Ioctl, OV5645AF_Release, NULL},
 	{1, AFDRV_LC898122AF, LC898122AF_SetI2Cclient, LC898122AF_Ioctl,
 	 LC898122AF_Release, LC898122AF_GetFileName, NULL},
 	{1, AFDRV_WV511AAF, WV511AAF_SetI2Cclient, WV511AAF_Ioctl,
@@ -670,12 +674,26 @@ static int AF_Open(struct inode *a_pstInode, struct file *a_pstFile)
 	g_s4AF_Opened = 1;
 	spin_unlock(&g_AF_SpinLock);
 
-	af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
-			AF_PINCTRL_PINSTATE_HIGH);
+	if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"k6885v1_64_alpha", 16) == 0) {
+		af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
+				AF_PINCTRL_PINSTATE_HIGH);
+	} else if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"muse6883_64_hdk_r", 17) == 0) {
+		af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
+				AF_PINCTRL_PINSTATE_HIGH);
+        LOG_INF("CONFIG_ARCH_MTK_PROJECT: %s\n", CONFIG_ARCH_MTK_PROJECT);
+	} else if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"muse6883_caymanlm_r", 19) == 0) {
+		af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
+				AF_PINCTRL_PINSTATE_HIGH);
+        LOG_INF("CONFIG_ARCH_MTK_PROJECT: %s\n", CONFIG_ARCH_MTK_PROJECT);
+	} else {
 #if !defined(CONFIG_MTK_LEGACY)
 	AFRegulatorCtrl(0);
 	AFRegulatorCtrl(1);
 #endif
+	}
 	/* OIS/EIS Timer & Workqueue */
 	/* init work queue */
 	INIT_WORK(&ois_work, ois_pos_polling);
@@ -715,11 +733,25 @@ static int AF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 		spin_unlock(&g_AF_SpinLock);
 	}
 
-	af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
-			AF_PINCTRL_PINSTATE_LOW);
+	if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"k6885v1_64_alpha", 16) == 0) {
+		af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
+				AF_PINCTRL_PINSTATE_LOW);
+	} else if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"muse6883_64_hdk_r", 17) == 0) {
+		af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
+				AF_PINCTRL_PINSTATE_LOW);
+        LOG_INF("CONFIG_ARCH_MTK_PROJECT: %s\n", CONFIG_ARCH_MTK_PROJECT);
+	} else if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"muse6883_caymanlm_r", 19) == 0) {
+		af_pinctrl_set(AF_PINCTRL_PIN_HWEN,
+				AF_PINCTRL_PINSTATE_LOW);
+        LOG_INF("CONFIG_ARCH_MTK_PROJECT: %s\n", CONFIG_ARCH_MTK_PROJECT);
+	} else {
 #if !defined(CONFIG_MTK_LEGACY)
 	AFRegulatorCtrl(2);
 #endif
+	}
 
 	/* OIS/EIS Timer & Workqueue */
 	/* Cancel Timer */
@@ -878,9 +910,23 @@ static int AF_i2c_probe(struct i2c_client *client,
 
 static int AF_probe(struct platform_device *pdev)
 {
-	if (af_pinctrl_init(&pdev->dev))
-		LOG_INF("Failed to init pinctrl.\n");
-
+	if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"k6885v1_64_alpha", 16) == 0) {
+		if (af_pinctrl_init(&pdev->dev))
+			LOG_INF("Failed to init pinctrl.\n");
+	} else if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"muse6883_64_hdk_r", 17) == 0) {
+		if (af_pinctrl_init(&pdev->dev))
+			LOG_INF("Failed to init pinctrl.\n");
+		else
+			LOG_INF("CONFIG_ARCH_MTK_PROJECT: %s, af_pinctrl_init success ~ ! \n", CONFIG_ARCH_MTK_PROJECT);
+	} else if (strncmp(CONFIG_ARCH_MTK_PROJECT,
+		"muse6883_caymanlm_r", 17) == 0) {
+		if (af_pinctrl_init(&pdev->dev))
+			LOG_INF("Failed to init pinctrl.\n");
+		else
+			LOG_INF("CONFIG_ARCH_MTK_PROJECT: %s, af_pinctrl_init success ~ ! \n", CONFIG_ARCH_MTK_PROJECT);
+	}
 	return i2c_add_driver(&AF_i2c_driver);
 }
 

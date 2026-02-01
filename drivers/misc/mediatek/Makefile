@@ -170,6 +170,9 @@ obj-$(CONFIG_MTK_LOW_POWER_MODULE) += lpm/
 obj-$(CONFIG_MTK_TASK_TURBO) += task_turbo/
 obj-$(CONFIG_MTK_UNIFIED_DEBUG_INTERFACE) += udi/
 obj-y += rps/
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/tc1_interface/),)
+obj-$(CONFIG_MTK_TC1_FEATURE)   += tc1_interface/
+endif
 obj-$(CONFIG_MTK_MDDP_SUPPORT) += mddp/
 obj-$(CONFIG_MTK_USB2JTAG_SUPPORT) += usb2jtag/
 obj-y += subpmic/
