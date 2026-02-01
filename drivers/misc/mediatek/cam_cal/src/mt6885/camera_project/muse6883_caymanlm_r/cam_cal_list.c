@@ -13,12 +13,15 @@
 #include <linux/kernel.h>
 #include "cam_cal_list.h"
 #include "eeprom_i2c_common_driver.h"
-#include "eeprom_i2c_custom_driver.h"
 #include "kd_imgsensor.h"
 
 #define MAX_EEPROM_SIZE_16K 0x4000
 
 struct stCAM_CAL_LIST_STRUCT g_camCalList[] = {
+	{S5KGM2_SENSOR_ID, 0xAC, Common_read_region, MAX_EEPROM_SIZE_16K},
+	{HI1634_SENSOR_ID, 0xA6, Common_read_region, MAX_EEPROM_SIZE_16K},
+	{SL846_SENSOR_ID, 0xA0, Common_read_region, MAX_EEPROM_SIZE_16K},
+#if 0
 	/*Below is commom sensor */
 	{IMX586_SENSOR_ID, 0xA0, Common_read_region, MAX_EEPROM_SIZE_16K},
 	{IMX576_SENSOR_ID, 0xA2, Common_read_region},
@@ -36,6 +39,7 @@ struct stCAM_CAL_LIST_STRUCT g_camCalList[] = {
 	{IMX350_SENSOR_ID, 0xA0, Common_read_region},
 	{IMX386_MONO_SENSOR_ID, 0xA0, Common_read_region},
 	{IMX499_SENSOR_ID, 0xA0, Common_read_region},
+#endif
 	/*  ADD before this line */
 	{0, 0, 0}       /*end of list */
 };
