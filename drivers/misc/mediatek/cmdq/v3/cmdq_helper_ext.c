@@ -252,8 +252,7 @@ bool cmdq_core_check_user_valid(void *src, u32 size)
 
 	mutex_unlock(&cmdq_inst_check_mutex);
 
-	cost = sched_clock() - cost;
-	do_div(cost, 1000);
+	cost = div_u64(sched_clock() - cost, 1000);
 
 	CMDQ_MSG("%s size:%u cost:%lluus ret:%s\n", __func__, size, (u64)cost,
 		ret ? "true" : "false");
@@ -1966,6 +1965,20 @@ int cmdqCoreAllocWriteAddress(u32 count, dma_addr_t *paStart,
 			break;
 		}
 
+		/* clear buffer content */
+		do {
+			u32 *pInt = (u32 *) pWriteAddr->va;
+			int i = 0;
+
+			for (i = 0; i < count; ++i) {
+				*(pInt + i) = 0xcdcdabab;
+				/* make sure instructions are really in DRAM */
+				mb();
+				/* make sure instructions are really in DRAM */
+				smp_mb();
+			}
+		} while (0);
+
 		/* assign output pa */
 		*paStart = pWriteAddr->pa;
 
@@ -2471,7 +2484,7 @@ ssize_t cmdq_core_print_error(struct device *dev,
 		i++) {
 		struct ErrorStruct *pError = &cmdq_ctx.error[i];
 		u64 ts = pError->ts_nsec;
-		unsigned long rem_nsec = do_div(ts, 1000000000);
+		unsigned long rem_nsec = (unsigned long)div_u64(ts, 1000000000);
 
 		length += snprintf(buf + length,
 			PAGE_SIZE - length, "[%5lu.%06lu] ",
@@ -2517,7 +2530,6 @@ EXPORT_SYMBOL(cmdq_core_print_log_level);
 ssize_t cmdq_core_write_log_level(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	int len = 0;
 	int value = 0;
 	int status = 0;
 
@@ -2529,16 +2541,15 @@ ssize_t cmdq_core_write_log_level(struct device *dev,
 			break;
 		}
 
-		len = size;
-		memcpy(textBuf, buf, len);
+		memcpy(textBuf, buf, size);
 
-		textBuf[len] = '\0';
+		textBuf[size] = '\0';
 		if (kstrtoint(textBuf, 10, &value) < 0) {
 			status = -EFAULT;
 			break;
 		}
 
-		status = len;
+		status = size;
 		if (value < 0 || value > CMDQ_LOG_LEVEL_MAX)
 			value = 0;
 
@@ -5002,6 +5013,7 @@ static s32 cmdq_pkt_flush_async_ex_impl(struct cmdqRecStruct *handle,
 	struct cmdqRecStruct **pmqos_handle_list = NULL;
 	struct ContextStruct *ctx;
 	u32 handle_count;
+	int32_t thread;
 
 	if (!handle->finalized) {
 		CMDQ_ERR("handle not finalized:0x%p scenario:%d\n",
@@ -5111,14 +5123,15 @@ static s32 cmdq_pkt_flush_async_ex_impl(struct cmdqRecStruct *handle,
 		CMDQ_LOG("cl:%p not same client:%p\n", handle->pkt->cl, client);
 		handle->pkt->cl = client;
 	}
+	thread = handle->thread;
 	err = cmdq_pkt_flush_async(handle->pkt, cmdq_pkt_flush_handler,
 		(void *)handle);
 	CMDQ_SYSTRACE_END();
 
 	if (err < 0) {
-		CMDQ_ERR("pkt flush failed err:%d pkt:0x%p\n",
-			err, handle->pkt);
-		cmdq_pkt_release_handle(handle);
+		CMDQ_ERR("pkt flush failed err:%d handle:%p thread:%d\n",
+			err, handle, thread);
+
 		return err;
 	}
 
