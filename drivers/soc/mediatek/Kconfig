@@ -69,3 +69,4 @@ config MTK_LPM
 	  platform could enter deeper sleep mode when cpu preparing to
 	  power down if it have sufficient time between warmboot.
 
+source "drivers/soc/mediatek/lge/Kconfig"
