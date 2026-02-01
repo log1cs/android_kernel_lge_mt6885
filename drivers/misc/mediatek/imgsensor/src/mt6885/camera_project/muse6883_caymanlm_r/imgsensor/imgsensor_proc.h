@@ -11,18 +11,21 @@
  * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
 
-#ifndef __SENINF_CFG_H__
-#define __SENINF_CFG_H__
+#ifndef __IMGSENSOR_PROC_H__
+#define __IMGSENSOR_PROC_H__
 
-#define SENINF_MAX_NUM 8
+#include "kd_imgsensor.h"
+#include "kd_imgsensor_define.h"
+#include "imgsensor_common.h"
 
-#define SENINF_MAP_BASE_REG  0x1A004000
-#define SENINF_MAP_BASE_ANA  0x11C80000
-#define SENINF_MAP_BASE_GPIO 0xFFFFFFFF
+#define PROC_CAMERA_INFO "driver/camera_info"
+#define IMGSENSOR_STATUS_INFO_LENGTH 128
+#define camera_info_size 4096
 
-#define SENINF_MAP_LENGTH_REG  0xA000
-#define SENINF_MAP_LENGTH_ANA  0x10000
-#define SENINF_MAP_LENGTH_GPIO 0x00000
+extern char mtk_ccm_name[camera_info_size];
 
+enum IMGSENSOR_RETURN imgsensor_proc_init(void);
+
+extern struct IMGSENSOR gimgsensor;
 #endif
 

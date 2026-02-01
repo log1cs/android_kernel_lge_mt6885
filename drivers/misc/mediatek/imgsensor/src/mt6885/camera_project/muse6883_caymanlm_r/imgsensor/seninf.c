@@ -123,12 +123,9 @@ MINT32 seninf_dump_reg(void)
 
 static irqreturn_t seninf_irq(MINT32 Irq, void *DeviceId)
 {
-#ifdef SENINF_IRQ
-	_seninf_irq(Irq, DeviceId, &gseninf);
-#else
+#if 0
 	seninf_dump_reg();
 #endif
-
 	return IRQ_HANDLED;
 }
 

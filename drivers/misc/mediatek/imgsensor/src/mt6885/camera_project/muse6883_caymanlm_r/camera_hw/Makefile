@@ -11,4 +11,13 @@
 # GNU General Public License for more details.
 #
 
-obj-y				+= ../../common/v1_1/seninf_clk.o
+#
+# Makefile for misc devices that really don't fit anywhere else.
+#
+ccflags-y += -I$(MTK_CUSTOM_PATH)/imgsensor/inc \
+
+obj-y		+= regulator/
+obj-y		+= gpio/
+obj-y		+= mclk/
+obj-y		+= imgsensor_cfg_table.o
+#obj-y           += imgsensor_oc.o

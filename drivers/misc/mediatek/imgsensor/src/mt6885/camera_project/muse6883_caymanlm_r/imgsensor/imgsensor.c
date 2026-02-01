@@ -52,6 +52,7 @@
 #endif
 #include "imgsensor.h"
 
+#include <soc/mediatek/lge/board_lge.h>//[LGE_UPDATE][bk.bae@lge.com][2020-02-13] revision check
 #if defined(CONFIG_MTK_CAM_SECURE_I2C)
 #include "imgsensor_ca.h"
 #endif
@@ -60,6 +61,14 @@ static DEFINE_MUTEX(gimgsensor_mutex);
 static DEFINE_MUTEX(gimgsensor_open_mutex);
 
 struct IMGSENSOR gimgsensor;
+/*LGE_CHANGE_S, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
+static struct class *camera_sensor_id_class = NULL;
+char rear_sensor_name[20] = "(null)";
+char front_sensor_name[20] = "(null)";
+char wide_sensor_name[20] = "(null)";
+char aux_sensor_name[20] = "(null)";
+extern tetracell_cal_data_t tetracell_cal_data[2];
+/*LGE_CHANGE_E, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
 
 /******************************************************************************
  * Profiling
@@ -515,6 +524,22 @@ static void imgsensor_init_sensor_list(void)
 	}
 }
 
+/*TETRACELL CAL bring up*/
+tetracell_cal_data_t tetracell_cal_data[2];
+//char *otp_content[] = {"XTC_1", "XTC_2", "SensorXTC", "PDXTC_1", "PDXTC_2"};
+kal_uint16 tetracell_cal_i2c_read(tetracell_cal_format_t *p, u16 i2c_addr, enum CAL_FORM cal_form, UINT8* data_c)
+{
+	extern int iReadRegI2C(u8 *a_pSendData, u16 a_sizeSendData, u8 *a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
+	UINT16 addr = p->start_addr - 1;
+	UINT8 *data = data_c + p->offset;
+    char pu_send_cmd[2] = {(char)(addr >> 8) , (char)(addr & 0xFF) };
+
+    pu_send_cmd[1] += 1;
+    iReadRegI2C(pu_send_cmd , 2, data, p->size, i2c_addr);
+
+	return 0;
+}
+
 /******************************************************************************
  * imgsensor_check_is_alive
  ******************************************************************************/
@@ -541,10 +566,10 @@ static inline int imgsensor_check_is_alive(struct IMGSENSOR_SENSOR *psensor)
 
 	/* not implement this feature ID */
 	if (sensorID == 0 || sensorID == 0xFFFFFFFF) {
-		PK_DBG("Fail to get sensor ID %x\n", sensorID);
+		pr_err("Fail to get sensor ID %x\n", sensorID);
 		err = ERROR_SENSOR_CONNECT_FAIL;
 	} else {
-		PK_DBG("Sensor found ID = 0x%x\n", sensorID);
+		pr_info("Sensor found ID = 0x%x\n", sensorID);
 		err = ERROR_NONE;
 	}
 
@@ -567,9 +592,19 @@ int imgsensor_set_driver(struct IMGSENSOR_SENSOR *psensor)
 	struct IMGSENSOR_SENSOR_INST *psensor_inst = &psensor->inst;
 
 	imgsensor_mutex_init(psensor_inst);
-	imgsensor_i2c_init(&psensor_inst->i2c_cfg,
-	imgsensor_custom_config[
-	(unsigned int)psensor_inst->sensor_idx].i2c_dev);
+
+/* LGE_CHANGE_S, 2020-04-29, revision check for reva, ssora.lee@lge.com */
+	if(lge_get_board_revno() == HW_REV_A) {
+		pr_info("###imgsensor camera custom i2c REV_A");
+		imgsensor_i2c_init(&psensor_inst->i2c_cfg,
+			imgsensor_custom_config_reva[psensor_inst->sensor_idx].i2c_dev);
+	} else {
+		pr_debug("###imgsensor camera custom i2c not REV_A");
+		imgsensor_i2c_init(&psensor_inst->i2c_cfg,
+			imgsensor_custom_config[psensor_inst->sensor_idx].i2c_dev);
+	}
+/* LGE_CHANGE_E, 2020-04-29, revision check for reva, ssora.lee@lge.com */
+
 	imgsensor_i2c_filter_msg(&psensor_inst->i2c_cfg, true);
 
 	while (i < MAX_NUM_OF_SUPPORT_SENSOR && pimgsensor->psensor_list[i]) {
@@ -586,7 +621,7 @@ int imgsensor_set_driver(struct IMGSENSOR_SENSOR *psensor)
 #endif
 
 				if (!imgsensor_check_is_alive(psensor)) {
-					PK_INFO(
+					pr_info(
 					"[%s] :[%d][%s]\n",
 					__func__,
 					psensor_inst->sensor_idx,
@@ -1620,51 +1655,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			}
 		}
 		break;
-	case SENSOR_FEATURE_GET_SEAMLESS_SCENARIOS:
-	case SENSOR_FEATURE_SEAMLESS_SWITCH:
-		{
-#define _DATA_SIZE 64
-			char *p_data = NULL;
-			unsigned long long *pFeaturePara_64 =
-				(unsigned long long *)pFeaturePara;
-			void *usr_ptr =
-				(void *)(uintptr_t) (*(pFeaturePara_64 + 1));
-
-			p_data = kmalloc(
-				sizeof(char) * _DATA_SIZE, GFP_KERNEL);
-			if (p_data == NULL) {
-				kfree(pFeaturePara);
-				PK_DBG(" ioctl allocate mem failed\n");
-				return -ENOMEM;
-			}
-			if (copy_from_user((void *)p_data,
-				(void __user *)usr_ptr, _DATA_SIZE)) {
-				kfree(pFeaturePara);
-				kfree(p_data);
-				PK_DBG("[CAMERA_HW]ERROR: copy_from_user fail\n");
-				return -ENOMEM;
-			}
-
-			if (pFeaturePara_64 != NULL)
-				*(pFeaturePara_64 + 1) = (uintptr_t) p_data;
-
-			ret = imgsensor_sensor_feature_control(psensor,
-					pFeatureCtrl->FeatureId,
-					(unsigned char *)pFeaturePara,
-					(unsigned int *)&FeatureParaLen);
-
-			if (copy_to_user((void __user *)usr_ptr,
-					 (void *)p_data, _DATA_SIZE)) {
-				PK_DBG("[CAMERA_HW]ERROR: copy_to_user fail\n");
-			}
-			kfree(p_data);
-			*(pFeaturePara_64 + 1) = (uintptr_t) usr_ptr;
-		}
-		break;
 	case SENSOR_FEATURE_GET_PDAF_DATA:
 	case SENSOR_FEATURE_GET_4CELL_DATA:
 		{
-#define PDAF_DATA_SIZE 4096
+#define PDAF_DATA_SIZE 8392 //4096
 			char *pPdaf_data = NULL;
 			unsigned long long *pFeaturePara_64 =
 				(unsigned long long *)pFeaturePara;
@@ -1694,16 +1688,19 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			if (pFeaturePara_64 != NULL)
 				*(pFeaturePara_64 + 1) = (uintptr_t) pPdaf_data;
 
-
+//LGE_CHANGE_S, 2020-05-06, add 4cell cal data
+#if 0
 			ret = imgsensor_sensor_feature_control(psensor,
 					pFeatureCtrl->FeatureId,
 					(unsigned char *)pFeaturePara,
 					(unsigned int *)&FeatureParaLen);
-
+#endif
 			if (copy_to_user((void __user *)usr_ptr,
-					 (void *)pPdaf_data, buf_sz)) {
+					(void *)(&(tetracell_cal_data[0])), buf_sz)) {
+//					 (void *)pPdaf_data, buf_sz)) {
 				PK_DBG("[CAMERA_HW]ERROR: copy_to_user fail\n");
 			}
+//LGE_CHANGE_E, 2020-05-06, add 4cell cal data
 			kfree(pPdaf_data);
 			*(pFeaturePara_64 + 1) = (uintptr_t) usr_ptr;
 		}
@@ -2143,12 +2140,25 @@ static const struct file_operations gimgsensor_file_operations = {
 	.compat_ioctl   = imgsensor_compat_ioctl
 #endif
 };
-
+/*LGE_CHANGE_S, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
+static ssize_t show_LGCameraSensorName(struct device *dev,struct device_attribute *attr, char *buf)
+{
+    pr_err("show_LGCameraSensorName: rear_camera_name [%s] , front_camera_name [%s]\n", rear_sensor_name, front_sensor_name);
+    //if(lge_camera_hwinfo == 3) 
+        return sprintf(buf, "FCam:%s^^RCam:%s^^RCam1:%s^^RCam2:%s\n", front_sensor_name, rear_sensor_name, wide_sensor_name, aux_sensor_name);
+    //else if(lge_camera_hwinfo == 2)
+    //    return sprintf(buf, "FCam:%s^^RCam:%s^^RCam1:%s\n", front_sensor_name, rear_sensor_name, aux_sensor_name);
+    //else
+	//    return sprintf(buf, "FCam:%s^^RCam:%s^^RCam1:%s\n", front_sensor_name, rear_sensor_name, aux_sensor_name);
+}
+static DEVICE_ATTR(sensor_name, S_IRUGO, show_LGCameraSensorName, NULL);
+/*LGE_CHANGE_E, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
 static int imgsensor_probe(struct platform_device *pplatform_device)
 {
 	struct IMGSENSOR *pimgsensor = &gimgsensor;
 	struct IMGSENSOR_HW *phw = &pimgsensor->hw;
 	struct device *pdevice;
+    struct device*  camera_sensor_name_dev;/*LGE_CHANGE, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
 
 	/* Register char driver */
 	if (alloc_chrdev_region(&pimgsensor->dev_no, 0, 1,
@@ -2192,6 +2202,12 @@ static int imgsensor_probe(struct platform_device *pplatform_device)
 		PK_PR_ERR("Get cust camera node failed!\n");
 		return -ENODEV;
 	}
+
+/*LGE_CHANGE_S, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
+    camera_sensor_id_class = class_create(THIS_MODULE, "camsensor");
+    camera_sensor_name_dev = device_create(camera_sensor_id_class, NULL,0, NULL, "sensor_name");
+    device_create_file(camera_sensor_name_dev, &dev_attr_sensor_name);
+/*LGE_CHANGE_E, 2020-04-06, add the camera identifying logic , bk.bae@lge.com*/
 
 	phw->common.pplatform_device = pplatform_device;
 
@@ -2270,11 +2286,7 @@ static void __exit imgsensor_exit(void)
 {
 	platform_driver_unregister(&gimgsensor_platform_driver);
 }
-#ifdef NEED_LATE_INITCALL
-	late_initcall(imgsensor_init);
-#else
-	module_init(imgsensor_init);
-#endif
+module_init(imgsensor_init);
 module_exit(imgsensor_exit);
 
 MODULE_DESCRIPTION("image sensor driver");
