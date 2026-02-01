@@ -16,6 +16,11 @@
 #include <linux/slab.h>
 #include <linux/mutex.h>
 
+#ifdef CONFIG_LGE_PM_GPU_UTILITY
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#endif
+
 #include <mt-plat/mtk_gpu_utility.h>
 #if 0
 #include "ged_monitor_3D_fence.h"
@@ -912,3 +917,48 @@ bool mtk_get_dvfs_loading_mode(unsigned int *pui32LoadingMode)
 	return false;
 }
 EXPORT_SYMBOL(mtk_get_dvfs_loading_mode);
+
+#ifdef CONFIG_LGE_PM_GPU_UTILITY
+static int gpu_loading_proc_show(struct seq_file *m, void *v)
+{
+	int loading = 0;
+
+	mtk_get_gpu_loading(&loading);
+
+	seq_printf(m, "%d\n", loading);
+
+	return 0;
+}
+
+static int gpu_loading_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, gpu_loading_proc_show, NULL);
+}
+
+static const struct file_operations gpu_loading_proc_fops = {
+	.open       = gpu_loading_proc_open,
+	.read       = seq_read,
+	.llseek     = seq_lseek,
+	.release    = single_release,
+};
+
+static int __init gpu_utility_proc_init(void)
+{
+	struct proc_dir_entry *dir, *entry;
+
+	dir = proc_mkdir("gpu_utility", NULL);
+	if (dir == NULL) {
+		pr_err("%s : failed to make gpu_utility\n", __func__);
+		return -ENOMEM;
+	}
+
+	entry = proc_create("gpu_loading", 0444, dir, &gpu_loading_proc_fops);
+	if (entry == NULL) {
+		pr_err("%s : failed to make gpu_utility\n", __func__);
+		return -EIO;
+	}
+
+	return 0;
+}
+module_init(gpu_utility_proc_init);
+#endif
