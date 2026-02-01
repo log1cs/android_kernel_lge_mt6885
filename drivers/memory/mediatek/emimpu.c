@@ -21,6 +21,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <mt-plat/aee.h>
+
 LIST_HEAD(mpucb_list);
 static DEFINE_MUTEX(mpucb_mutex);
 
@@ -30,7 +31,10 @@ static struct emimpu_callbacks {
 	irqreturn_t (*debug_dump)(unsigned int emi_id, struct reg_info_t *dump, unsigned int len);
 	bool handled;
 };
-
+#ifdef CONFIG_MACH_MT6885
+unsigned int in_msg_dump;
+char aee_msg[MTK_EMI_MAX_CMD_LEN];
+#endif
 static struct platform_device *emimpu_pdev;
 
 static int emimpu_probe(struct platform_device *pdev);
@@ -49,7 +53,7 @@ static unsigned int emimpu_read_protection(
 		reg_type, region, dgroup, 0, 0, 0, &smc_res);
 	return (unsigned int)smc_res.a0;
 }
-#ifdef MTK_EMIMPU_DBG_ENABLE
+
 static ssize_t emimpu_ctrl_show(struct device_driver *driver, char *buf)
 {
 	struct emimpu_dev_t *emimpu_dev_ptr;
@@ -261,7 +265,7 @@ emimpu_ctrl_store_end:
 }
 
 static DRIVER_ATTR_RW(emimpu_ctrl);
-#endif
+
 static void set_regs(
 	struct reg_info_t *reg_list, unsigned int reg_cnt,
 	void __iomem *emi_cen_base)
@@ -287,7 +291,115 @@ static void clear_violation(
 	if (post_clear_cb)
 		post_clear_cb(emi_id);
 }
+#ifdef CONFIG_MACH_MT6885
+static void emimpu_dump_msg(struct work_struct *work)
+{
+	aee_kernel_exception("EMIMPU", aee_msg);
+	in_msg_dump = 0;
+}
 
+static DECLARE_WORK(emimpu_dump_msg_wq, emimpu_dump_msg);
+
+static irqreturn_t emimpu_violation_irq(int irq, void *dev_id)
+{
+	struct emimpu_dev_t *emimpu_dev_ptr =
+		(struct emimpu_dev_t *)platform_get_drvdata(emimpu_pdev);
+	struct reg_info_t *dump_reg = emimpu_dev_ptr->dump_reg;
+	void __iomem *emi_cen_base;
+	unsigned int emi_id;
+	unsigned int i;
+	bool violation, mpu_bypass;
+	ssize_t aee_msg_cnt = -1;
+	struct emimpu_callbacks *mpucb;
+
+	if (!in_msg_dump)
+		aee_msg_cnt = snprintf(aee_msg, MTK_EMI_MAX_CMD_LEN, "violation\n");
+
+	for (emi_id = 0; emi_id < emimpu_dev_ptr->emi_cen_cnt; emi_id++) {
+		violation = false;
+		emi_cen_base = emimpu_dev_ptr->emi_cen_base[emi_id];
+
+		for (i = 0; i < emimpu_dev_ptr->dump_cnt; i++) {
+			dump_reg[i].value = readl(
+				emi_cen_base + dump_reg[i].offset);
+			if (dump_reg[i].value)
+				violation = true;
+		}
+
+		pr_info("check violation MPUS 0x%x MPUT 0x%x MPUT_2ND 0x%x\n",
+			dump_reg[0].value, dump_reg[1].value, dump_reg[2].value);
+
+		if (!violation)
+			continue;
+
+		for (i = 0; i < emimpu_dev_ptr->dump_cnt; i++) {
+			dump_reg[i].value = readl(
+				emi_cen_base + dump_reg[i].offset);
+		}
+		pr_info("confirm violation MPUS 0x%x MPUT 0x%x MPUT_2ND 0x%x\n",
+			dump_reg[0].value, dump_reg[1].value, dump_reg[2].value);
+		for (i = 0; i < emimpu_dev_ptr->dump_cnt; i++) {
+			pr_info("%s: emi%d, offset(0x%x), value(0x%x)\n",
+				__func__, emi_id,
+				dump_reg[i].offset, dump_reg[i].value);
+
+				if (aee_msg_cnt < MTK_EMI_MAX_CMD_LEN &&
+					!in_msg_dump && aee_msg_cnt > 0) {
+					aee_msg_cnt += snprintf(aee_msg + aee_msg_cnt,
+					MTK_EMI_MAX_CMD_LEN - aee_msg_cnt,
+					"%s(%d),%s(%x),%s(%x);\n",
+					"emi", emi_id,
+					"off", dump_reg[i].offset,
+					"val", dump_reg[i].value);
+			}
+		}
+		if (pre_handling_cb)
+			if (pre_handling_cb(emi_id,
+				dump_reg, emimpu_dev_ptr->dump_cnt)
+				== IRQ_HANDLED) {
+				goto violation_irq_clear;
+			}
+		mpu_bypass = false;
+		list_for_each_entry_reverse(mpucb, &mpucb_list, list) {
+			if (mpucb->debug_dump)
+				if (mpucb->debug_dump(emi_id,
+					dump_reg, emimpu_dev_ptr->dump_cnt)
+					== IRQ_HANDLED) {
+					mpucb->handled = true;
+					mpu_bypass = true;
+					break;// break list
+				}
+		}
+		if (mpu_bypass)
+			goto violation_irq_clear;
+
+		if (md_handling_cb) {
+			md_handling_cb(emi_id,
+				dump_reg, emimpu_dev_ptr->dump_cnt);
+		}
+
+		if (!in_msg_dump) {
+			pr_info("%s: violation at emi%d\n", __func__, emi_id);
+			in_msg_dump = 1;
+			schedule_work(&emimpu_dump_msg_wq);
+		}
+
+violation_irq_clear:
+		pr_info("before clear MPUS 0x%x MPUT 0x%x MPUT_2ND 0x%x\n",
+			dump_reg[0].value, dump_reg[1].value, dump_reg[2].value);
+		clear_violation(emimpu_dev_ptr, emi_id);
+		for (i = 0; i < emimpu_dev_ptr->dump_cnt; i++) {
+			dump_reg[i].value = readl(
+			emi_cen_base + dump_reg[i].offset);
+		}
+		pr_info("clear! MPUS 0x%x MPUT 0x%x MPUT_2ND 0x%x\n",
+			dump_reg[0].value, dump_reg[1].value, dump_reg[2].value);
+	}
+
+	dsb(sy);
+	return IRQ_HANDLED;
+}
+#else
 static irqreturn_t emimpu_violation_irq(int irq, void *dev_id)
 {
 	struct emimpu_dev_t *emimpu_dev_ptr =
@@ -369,7 +481,7 @@ static irqreturn_t emimpu_violation_irq(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
-
+#endif
 static int emimpu_remove(struct platform_device *dev)
 {
 	return 0;
@@ -415,7 +527,6 @@ static int emimpu_probe(struct platform_device *pdev)
 	if (!emimpu_dev_ptr)
 		return -ENOMEM;
 	emimpu_dev_ptr->show_region = 0;
-
 	ret = of_property_read_u32(emimpu_node,
 		"region_cnt", &(emimpu_dev_ptr->region_cnt));
 	if (ret) {
@@ -578,7 +689,9 @@ static int emimpu_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, emimpu_dev_ptr);
-
+#ifdef CONFIG_MACH_MT6885
+	in_msg_dump = 0;
+#endif
 	emimpu_irq = irq_of_parse_and_map(emimpu_node, 0);
 	ret = request_irq(emimpu_irq, (irq_handler_t)emimpu_violation_irq,
 		IRQF_TRIGGER_NONE, "emimpu", &emimpu_drv);
@@ -624,15 +737,15 @@ static int emimpu_probe(struct platform_device *pdev)
 		for (i = 0; i < emimpu_dev_ptr->domain_cnt; i++)
 			arm_smccc_smc(MTK_SIP_EMIMPU_CONTROL, MTK_EMIMPU_SLVERR,
 				i, 0, 0, 0, 0, 0, &smc_res);
-#ifdef MTK_EMIMPU_DBG_ENABLE
+
 	ret = driver_create_file(&emimpu_drv.driver,
 		&driver_attr_emimpu_ctrl);
 	if (ret)
 		pr_info("%s: fail to create emimpu_ctrl\n", __func__);
-#endif
+
 	return ret;
 }
-
+/*
 static int __init emimpu_ap_region_init(void)
 {
 	struct emimpu_dev_t *emimpu_dev_ptr;
@@ -655,7 +768,7 @@ static int __init emimpu_ap_region_init(void)
 
 	return 0;
 }
-
+*/
 static int __init emimpu_drv_init(void)
 {
 	int ret;
@@ -674,7 +787,7 @@ static void __exit emimpu_drv_exit(void)
 	platform_driver_unregister(&emimpu_drv);
 }
 
-late_initcall_sync(emimpu_ap_region_init);
+/*late_initcall_sync(emimpu_ap_region_init);*/
 module_init(emimpu_drv_init);
 module_exit(emimpu_drv_exit);
 
@@ -692,14 +805,6 @@ int mtk_emimpu_init_region(
 	unsigned int size;
 	unsigned int i;
 
-	if (rg_info) {
-		rg_info->start = 0;
-		rg_info->end = 0;
-		rg_info->rg_num = rg_num;
-		rg_info->lock = false;
-		rg_info->apc = NULL;
-	}
-
 	if (!emimpu_pdev)
 		return -1;
 
@@ -710,6 +815,11 @@ int mtk_emimpu_init_region(
 		pr_info("%s: fail, out-of-range region\n", __func__);
 		return -1;
 	}
+
+	rg_info->start = 0;
+	rg_info->end = 0;
+	rg_info->rg_num = rg_num;
+	rg_info->lock = false;
 
 	size = sizeof(unsigned int) * emimpu_dev_ptr->domain_cnt;
 	rg_info->apc = kmalloc(size, GFP_KERNEL);
@@ -730,11 +840,8 @@ EXPORT_SYMBOL(mtk_emimpu_init_region);
  */
 int mtk_emimpu_free_region(struct emimpu_region_t *rg_info)
 {
-	if (rg_info && rg_info->apc) {
-		kfree(rg_info->apc);
-		return 0;
-	} else
-		return -EINVAL;
+	kfree(rg_info->apc);
+	return 0;
 }
 EXPORT_SYMBOL(mtk_emimpu_free_region);
 
