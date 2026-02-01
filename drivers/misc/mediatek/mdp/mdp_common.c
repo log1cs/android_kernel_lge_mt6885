@@ -762,11 +762,10 @@ static s32 cmdq_mdp_check_engine_waiting_unlock(struct cmdqRecStruct *handle)
 		if (mdp_ctx.thread[i].task_count &&
 			handle->secData.is_secure != mdp_ctx.thread[i].secure) {
 			CMDQ_LOG(
-				"sec engine busy %u count:%u engine:%#llx & %#llx submit:%llu trigger:%llu\n",
+				"sec engine busy %u count:%u engine:%#llx & %#llx\n",
 				i, mdp_ctx.thread[i].task_count,
 				mdp_ctx.thread[i].engine_flag,
-				handle->engineFlag,
-				handle->submit, handle->trigger);
+				handle->engineFlag);
 			return -EBUSY;
 		}
 	}
@@ -861,7 +860,7 @@ static s32 cmdq_mdp_find_free_thread(struct cmdqRecStruct *handle)
 		thread = cmdq_mdp_get_sec_thread();
 
 		if (threads[thread].task_count >=
-			CMDQ_MAX_TASK_IN_SECURE_THREAD) {
+			CMDQ_MAX_SECURE_THREAD_COUNT) {
 			CMDQ_LOG(
 				"[warn] too many task for secure path thread:%d count:%u\n",
 				thread, threads[thread].task_count);
@@ -930,6 +929,8 @@ static s32 cmdq_mdp_consume_handle(void)
 	u32 index;
 	bool acquired = false;
 	struct CmdqCBkStruct *callback = cmdq_core_get_group_cb();
+	bool force_inorder = false;
+	bool secure_run = false;
 	bool conflict = false;
 
 	/* operation for tasks_wait list need task mutex */
@@ -940,20 +941,47 @@ static s32 cmdq_mdp_consume_handle(void)
 	CMDQ_PROF_MMP(mdp_mmp_get_event()->consume_done, MMPROFILE_FLAG_START,
 		current->pid, 0);
 
+	handle = list_first_entry_or_null(&mdp_ctx.tasks_wait, typeof(*handle),
+		list_entry);
+	if (handle)
+		secure_run = handle->secData.is_secure;
+
 	/* loop waiting list for pending handles */
 	list_for_each_entry_safe(handle, temp, &mdp_ctx.tasks_wait,
 		list_entry) {
 		/* operations for thread list need thread lock */
 		mutex_lock(&mdp_thread_mutex);
 
+		if (force_inorder && handle->force_inorder) {
+			mutex_unlock(&mdp_thread_mutex);
+			CMDQ_LOG(
+				"skip force inorder handle:0x%p engine:0x%llx\n",
+				handle, handle->engineFlag);
+			continue;
+		}
+
+		if (secure_run != handle->secData.is_secure) {
+			mutex_unlock(&mdp_thread_mutex);
+			CMDQ_LOG(
+				"skip secure inorder handle:%p engine:%#llx sec:%s\n",
+				handle, handle->engineFlag,
+				handle->secData.is_secure ? "true" : "false");
+			break;
+		}
+
 		handle->thread = cmdq_mdp_find_free_thread(handle);
 		if (handle->thread == CMDQ_INVALID_THREAD) {
+			/* no available thread, keep wait */
+			if (handle->force_inorder) {
+				CMDQ_LOG(
+					"begin force inorder handle:0x%p engine:0x%llx\n",
+					handle, handle->engineFlag);
+				force_inorder = true;
+			}
 			mutex_unlock(&mdp_thread_mutex);
 			CMDQ_MSG(
-				"fail to get thread handle:0x%p engine:0x%llx sec:%s other acquired:%s\n",
-				handle, handle->engineFlag,
-				handle->secData.is_secure ? "true" : "false",
-				acquired ? "true" : "false");
+				"fail to get thread handle:0x%p engine:0x%llx\n",
+				handle, handle->engineFlag);
 			conflict = true;
 			break;
 		}
@@ -1167,8 +1195,7 @@ static s32 cmdq_mdp_setup_sec(struct cmdqCommandStruct *desc,
 	 */
 	cl = cmdq_helper_mbox_client(handle->thread);
 	if (unlikely(!cl)) {
-		CMDQ_ERR("%s no client for thread:%d\n",
-			__func__, handle->thread);
+		CMDQ_ERR("%s no client for thread:%d\n", handle->thread);
 		return -EINVAL;
 	}
 	handle->pkt->cl = (void *)cl;
@@ -1284,8 +1311,7 @@ s32 cmdq_mdp_handle_sec_setup(struct cmdqSecDataStruct *secData,
 	 */
 	cl = cmdq_helper_mbox_client(handle->thread);
 	if (unlikely(!cl)) {
-		CMDQ_ERR("%s no client for thread:%d\n",
-			__func__, handle->thread);
+		CMDQ_ERR("%s no client for thread:%d\n", handle->thread);
 		return -EINVAL;
 	}
 	handle->pkt->cl = (void *)cl;
@@ -3153,17 +3179,12 @@ static void mdp_readback_aal_virtual(struct cmdqRecStruct *handle,
 
 	condi_inst = (u32 *)cmdq_pkt_get_va_by_offset(pkt, condi_offset);
 	if (unlikely(!condi_inst)) {
-		CMDQ_ERR("%s wrong offset %u\n", __func__, condi_offset);
+		CMDQ_ERR("%s wrong offset %u\n", condi_offset);
 		return;
 	}
-	if (condi_inst[1] == 0x10000001) {
+	if (condi_inst[1] == 0x10000001)
 		condi_inst = (u32 *)cmdq_pkt_get_va_by_offset(pkt,
 			condi_offset + CMDQ_INST_SIZE);
-		if (unlikely(!condi_inst)) {
-			CMDQ_ERR("%s wrong offset %u.\n", __func__, condi_offset);
-			return;
-		}
-	}
 	*condi_inst = (u32)CMDQ_REG_SHIFT_ADDR(cmdq_pkt_get_curr_buf_pa(pkt));
 
 	pa = pa + MDP_AAL_SRAM_CNT * 4;
@@ -3276,18 +3297,12 @@ static void mdp_readback_hdr_virtual(struct cmdqRecStruct *handle,
 	cmdq_pkt_jump_addr(pkt, begin_pa);
 	condi_inst = (u32 *)cmdq_pkt_get_va_by_offset(pkt, condi_offset);
 	if (unlikely(!condi_inst)) {
-		CMDQ_ERR("%s wrong offset %u\n", __func__, condi_offset);
+		CMDQ_ERR("%s wrong offset %u\n", condi_offset);
 		return;
 	}
-	if (condi_inst[1] == 0x10000001) {
+	if (condi_inst[1] == 0x10000001)
 		condi_inst = (u32 *)cmdq_pkt_get_va_by_offset(pkt,
 			condi_offset + 8);
-		if (unlikely(!condi_inst)) {
-			CMDQ_ERR("%s wrong offset %u.\n", __func__, condi_offset);
-			return;
-		}
-	}
-
 	*condi_inst = (u32)CMDQ_REG_SHIFT_ADDR(cmdq_pkt_get_curr_buf_pa(pkt));
 
 	pa = pa + MDP_HDR_HIST_CNT * 4;
