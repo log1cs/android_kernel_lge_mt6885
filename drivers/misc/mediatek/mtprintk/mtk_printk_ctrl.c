@@ -48,6 +48,13 @@ bool mt_get_uartlog_status(void)
 	return true;
 }
 
+void set_uartlog_status(bool value)
+{
+#ifdef CONFIG_MTK_ENG_BUILD
+	printk_ctrl = value ? 0 : 1;
+	pr_info("set uart log status %d.\n", value);
+#endif
+}
 void mt_disable_uart(void)
 {
 	/* uart print not always enable */
