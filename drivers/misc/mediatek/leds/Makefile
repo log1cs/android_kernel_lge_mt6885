@@ -39,3 +39,23 @@ else
 obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 endif
 endif
+
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/chargepump/inc/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/lge/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/lge/brightness/
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/dramc/$(MTK_PLATFORM)	\
+             -I$(srctree)/drivers/misc/mediatek/smi/			\
+             -I$(srctree)/drivers/misc/mediatek/mmp/			\
+             -I$(srctree)/drivers/misc/mediatek/mmdvfs/			\
+             -I$(srctree)/drivers/iommu/				\
+             -I$(srctree)/drivers/devfreq/				\
+             -I$(srctree)/drivers/gpu/drm/				\
+             -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/mach/				\
+             -I$(srctree)/drivers/misc/mediatek/include/mt-plat \
+             -I$(srctree)/drivers/misc/mediatek/leds/ \
+             -I$(srctree)/drivers/misc/mediatek/leds/$(MTK_PLATFORM) \
+             -I$(srctree)/drivers/misc/mediatek/cmdq/mailbox/ \
+             -I$(srctree)/drivers/gpu/drm/mediatek/

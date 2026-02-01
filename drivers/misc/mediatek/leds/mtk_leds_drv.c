@@ -74,7 +74,7 @@ static int debug_enable_led = 1;
  * for DISP backlight High resolution
  *****************************************************************************/
 #ifdef LED_INCREASE_LED_LEVEL_MTKPATCH
-#define LED_INTERNAL_LEVEL_BIT_CNT 10
+#define LED_INTERNAL_LEVEL_BIT_CNT 11
 #endif
 /* Fix dependency if CONFIG_MTK_LCM not ready */
 void __weak disp_aal_notify_backlight_changed(int bl_1024) {};
@@ -140,9 +140,29 @@ int setMaxbrightness(int max_level, int enable)
 		}
 	}
 #else
+#ifdef CONFIG_LGE_PM_BACKLIGHT_COOLER
+	struct led_classdev *led_cdev;
+
+	LEDS_DRV_DEBUG("setMaxbrightness go through AAL\n");
+
+	limit_flag = (enable == 1) ? 1 : 0;
+	limit = (enable == 1) ? max_level : 255;
+
+	if (!g_leds_data[MT65XX_LED_TYPE_LCD])
+		return 0;
+
+	led_cdev = &g_leds_data[MT65XX_LED_TYPE_LCD]->cdev;
+	if (led_cdev->max_brightness == limit)
+		return 0;
+
+	led_cdev->max_brightness = limit;
+	if (led_cdev->brightness > limit) {
+		led_set_brightness(led_cdev, limit);
+#else /* MediaTek */
 	LEDS_DRV_DEBUG("%s go through AAL\n", __func__);
 	disp_bls_set_max_backlight(((((1 << LED_INTERNAL_LEVEL_BIT_CNT) -
 				      1) * max_level + 127) / 255));
+#endif
 #endif
 	return 0;
 }
