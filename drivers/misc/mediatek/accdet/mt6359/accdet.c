@@ -40,7 +40,14 @@
 #endif
 #include "pmic_auxadc.h"
 #endif /* end of #if PMIC_ACCDET_KERNEL */
-
+#ifdef CONFIG_LGE_ACCDET
+#define ACCDET_EXTCON_CABLE
+#define ACCDET_AUX
+#endif
+#ifdef ACCDET_EXTCON_CABLE
+#include "../../../../extcon/extcon.h"
+#include <linux/extcon.h>
+#endif
 /********************grobal variable definitions******************/
 #if PMIC_ACCDET_CTP
 #define CONFIG_ACCDET_EINT_IRQ
@@ -207,6 +214,13 @@ static bool debug_thread_en;
 static bool dump_reg;
 static struct task_struct *thread;
 
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+#define AB_CHECK_TIME   (1 * HZ)
+
+static bool force_4pole;
+static struct timer_list ab_check_timer;
+#endif
+
 /*******************local function declaration******************/
 #ifdef CONFIG_ACCDET_EINT_IRQ
 static u32 config_moisture_detect_1_0(void);
@@ -235,6 +249,100 @@ static void accdet_init_debounce(void);
 static void mini_dump_register(void);
 static void accdet_modify_vref_volt_self(void);
 /*******************global function declaration*****************/
+#ifdef ACCDET_EXTCON_CABLE
+static struct extcon_dev *accdet_edev = NULL;
+static struct platform_device *accdet_pdev = NULL;
+static char edev_name[16];
+static const unsigned int accdet_extcon_cable[] = {
+       EXTCON_NONE,
+};
+typedef enum{
+       ACC_EXTCON_NORMAL=0,
+       ACC_EXTCON_ADVANCED,
+       ACC_EXTCON_AUX,
+       ACC_EXTCON_HIDDEN,
+}accdet_headset_type;
+enum {
+       LGE_NO_DEVICE   = 0,
+       LGE_HEADSET = (1 << 0),
+       LGE_HEADPHONE = (1 << 1),
+       LGE_LINEOUT = (1 << 2),
+       LGE_AUX_HIDDEN = (1 << 6),
+};
+static int accdet_register_extcon_device(struct platform_device *pdev){
+       int ret;
+       accdet_pdev = pdev;
+    accdet_edev =  devm_extcon_dev_allocate(&pdev->dev, accdet_extcon_cable);
+    if(IS_ERR(accdet_edev)){
+        dev_err(&pdev->dev, "failed to allocate memory for extcon\n");
+        accdet_edev = NULL;
+        return -1;
+    }
+    strcpy(edev_name,"h2w");
+    accdet_edev->name = edev_name;
+    ret = devm_extcon_dev_register(&pdev->dev, accdet_edev);
+    if(ret){
+        dev_err(&pdev->dev, "failed to register extcon device\n");
+        return ret;
+    }
+
+    return ret;
+}
+static int accdet_unregister_extcon_device(void){
+
+       if(!accdet_pdev || !accdet_edev)
+              return -1;
+
+       devm_extcon_dev_unregister(&accdet_pdev->dev, accdet_edev);
+
+       return 0;
+}
+static void accdet_set_extcon_name(accdet_headset_type headset_type){
+       if(!accdet_edev)
+              return;
+
+       switch(headset_type){
+              case ACC_EXTCON_NORMAL:
+                     strcpy((char *)accdet_edev->name,"h2w");
+                     break;
+	      case ACC_EXTCON_ADVANCED:
+                     strcpy((char *)accdet_edev->name,"h2w_advanced");
+                     break;
+              case ACC_EXTCON_AUX:
+                     strcpy((char *)accdet_edev->name,"h2w_aux");
+                     break;
+              case ACC_EXTCON_HIDDEN:
+                     strcpy((char *)accdet_edev->name,"h2w_hidden");
+                     break;
+              default:
+                     strcpy((char *)accdet_edev->name,"h2w");
+                     break;
+       }
+}
+static void       accdet_report_extcon_cable(u32 cable_type, u32 status){
+       accdet_headset_type headset_type = ACC_EXTCON_NORMAL;
+       int result = LGE_NO_DEVICE;
+       switch(cable_type){
+              case NO_DEVICE:
+                     break;
+              case HEADSET_MIC:
+                     result = LGE_HEADSET;
+                     break;
+              case HEADSET_NO_MIC:
+                     result = LGE_HEADPHONE;
+                     break;
+              case LINE_OUT_DEVICE:
+                     result = LGE_LINEOUT;
+                     break;
+              default:
+                     headset_type = ACC_EXTCON_NORMAL;
+                     break;
+       }
+       accdet_set_extcon_name(status? headset_type: ACC_EXTCON_NORMAL);
+       //extcon_set_state_sync(accdet_edev, EXTCON_MECHANICAL, status?true:false);
+       accdet_edev->state = status? result: LGE_NO_DEVICE;
+}
+#endif /* ACCDET_EXTCON_CABLE */
 
 #if !defined CONFIG_MTK_PMIC_NEW_ARCH
 enum PMIC_FAKE_IRQ_ENUM {
@@ -370,6 +478,35 @@ inline void pmic_write_clr(u32 addr, u32 shift)
 	}
 #endif
 }
+
+#ifdef ACCDET_AUX
+static u32 auxCableInt = false;
+static void accdet_modify_input_detpin(int  micp){
+	u32 cur_AB;
+/*
+	if(accdet_dts.mic_mode != HEADSET_MODE_1)
+		return;
+*/
+	if(micp){
+		/*from ACCDET to MICP*/
+		cur_AB = pmic_read(PMIC_ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
+		cur_AB = cur_AB & ACCDET_STATE_AB_MASK;
+		if(cur_AB == ACCDET_STATE_AB_11){
+			auxCableInt = true;
+			pr_info("%s LGE_ACCDET: set to MICP\n", __func__);
+/*			//pmic_write_mset(PMIC_RG_AUDACCDETMICBIAS0PULLLOW_ADDR,
+			//		PMIC_RG_ACCDETSEL_SHIFT,PMIC_RG_ACCDETSEL_MASK, 0x1); */
+		}
+	}
+	else if(auxCableInt){
+		pr_info("%s LGE_ACCDET: set to ACCDET\n", __func__);
+		auxCableInt = false;
+/*		//pmic_write_mset(PMIC_RG_AUDACCDETMICBIAS0PULLLOW_ADDR,
+		//		PMIC_RG_ACCDETSEL_SHIFT,PMIC_RG_ACCDETSEL_MASK, 0x0); */
+	}
+
+}
+#endif
 
 static void mini_dump_register(void)
 {
@@ -1046,9 +1183,15 @@ static void send_key_event(u32 keycode, u32 flag)
 		pr_debug("accdet KEY_VOLUMEUP %d\n", flag);
 		break;
 	case MD_KEY:
+#ifdef CONFIG_LGE_ACCDET
+		input_report_key(accdet_input_dev, KEY_MEDIA, flag);
+		input_sync(accdet_input_dev);
+		pr_debug("accdet KEY_MEDIA %d\n", flag);
+#else
 		input_report_key(accdet_input_dev, KEY_PLAYPAUSE, flag);
 		input_sync(accdet_input_dev);
 		pr_debug("accdet KEY_PLAYPAUSE %d\n", flag);
+#endif
 		break;
 	case AS_KEY:
 		input_report_key(accdet_input_dev, KEY_VOICECOMMAND, flag);
@@ -1099,6 +1242,9 @@ static void send_accdet_status_event(u32 cable_type, u32 status)
 	default:
 		pr_info("%s Invalid cableType\n", __func__);
 	}
+#ifdef ACCDET_EXTCON_CABLE
+	accdet_report_extcon_cable(cable_type,status);
+#endif
 }
 #else
 u64 accdet_get_current_time(void)
@@ -1171,6 +1317,9 @@ static inline void clear_accdet_int_check(void)
 	pmic_write_clr(PMIC_ACCDET_IRQ_ADDR, PMIC_ACCDET_IRQ_CLR_SHIFT);
 	pmic_write_set(PMIC_RG_INT_STATUS_ACCDET_ADDR,
 		PMIC_RG_INT_STATUS_ACCDET_SHIFT);
+#ifdef ACCDET_AUX
+	accdet_modify_input_detpin(0);
+#endif
 }
 
 #ifdef CONFIG_ACCDET_EINT_IRQ
@@ -1808,9 +1957,7 @@ cur_AB = pmic_read(PMIC_ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
 	 */
 	if (cable_type == HEADSET_MIC) {
 		/* do nothing */
-	} else if ((cable_type == HEADSET_NO_MIC) ||
-		(cur_AB == ACCDET_STATE_AB_00) ||
-		(cur_AB == ACCDET_STATE_AB_11)) {
+	} else if (cable_type == HEADSET_NO_MIC) {
 		/* disable accdet_sw_en=0
 		 * disable accdet_hwmode_en=0
 		 */
@@ -1822,6 +1969,26 @@ cur_AB = pmic_read(PMIC_ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
 	}
 }
 #endif /* end of #if PMIC_ACCDET_KERNEL */
+
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+static void ab_check_timerhandler(struct timer_list *t)
+{
+	u32 cur_AB;
+	int ret;
+
+	if (!eint_accdet_sync_flag)
+		return;
+
+	cur_AB = pmic_read(PMIC_ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
+	cur_AB = cur_AB & ACCDET_STATE_AB_MASK;
+
+	if (cur_AB == ACCDET_STATE_AB_11) {
+		pr_info("accdet force 4-pole. AB=11\n");
+		force_4pole = 1;
+		ret = queue_work(accdet_workqueue, &accdet_work);
+	}
+}
+#endif
 
 #if PMIC_ACCDET_KERNEL
 static void eint_work_callback(struct work_struct *work)
@@ -1848,6 +2015,14 @@ static void eint_work_callback(void)
 
 		pr_info("%s VUSB LP dis done\n", __func__);
 		enable_accdet(0);
+#ifdef ACCDET_AUX
+		accdet_modify_input_detpin(1);
+#endif
+
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+		ab_check_timer.expires = jiffies + AB_CHECK_TIME;
+		add_timer(&ab_check_timer);
+#endif
 	} else {
 		pr_info("accdet cur:plug-out, cur_eint_state = %d\n",
 			cur_eint_state);
@@ -1864,6 +2039,10 @@ static void eint_work_callback(void)
 			PMIC_ACCDET_SW_EN_SHIFT);
 		disable_accdet();
 		headset_plug_out();
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+		force_4pole = 0;
+		del_timer(&ab_check_timer);
+#endif
 	}
 
 #ifdef CONFIG_ACCDET_EINT_IRQ
@@ -1940,6 +2119,15 @@ cur_AB = pmic_read(PMIC_ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
 	pr_notice("accdet %s(), cur_status:%s current AB = %d\n", __func__,
 		     accdet_status_str[accdet_status], cur_AB);
 
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+	/* Normal ACCDET irq. re-run cable detection */
+	if ((cur_AB!=ACCDET_STATE_AB_11) && force_4pole) {
+		pr_info("accdet release force 4-pole\n");
+		force_4pole = 0;
+		accdet_status = PLUG_OUT;
+	}
+#endif
+
 	s_button_status = 0;
 	pre_status = accdet_status;
 
@@ -1981,11 +2169,22 @@ cur_AB = pmic_read(PMIC_ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
 			pr_info("accdet PLUG_OUT state not change!\n");
 #ifdef CONFIG_ACCDET_EINT_IRQ
 			mutex_lock(&accdet_eint_irq_sync_mutex);
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+			if (eint_accdet_sync_flag & force_4pole) {
+				accdet_status = MIC_BIAS;
+				cable_type = HEADSET_MIC;
+			} else if (eint_accdet_sync_flag) {
+				accdet_status = PLUG_OUT;
+				cable_type = NO_DEVICE;
+			} else
+				pr_info("accdet headset has been plug-out\n");
+#else
 			if (eint_accdet_sync_flag) {
 				accdet_status = PLUG_OUT;
 				cable_type = NO_DEVICE;
 			} else
 				pr_info("accdet headset has been plug-out\n");
+#endif
 			mutex_unlock(&accdet_eint_irq_sync_mutex);
 #endif
 		} else
@@ -3302,6 +3501,9 @@ int mt_accdet_probe(struct platform_device *dev)
 
 	__set_bit(EV_KEY, accdet_input_dev->evbit);
 	__set_bit(KEY_PLAYPAUSE, accdet_input_dev->keybit);
+#ifdef CONFIG_LGE_ACCDET
+	__set_bit(KEY_MEDIA, accdet_input_dev->keybit);
+#endif
 	__set_bit(KEY_VOLUMEDOWN, accdet_input_dev->keybit);
 	__set_bit(KEY_VOLUMEUP, accdet_input_dev->keybit);
 	__set_bit(KEY_VOICECOMMAND, accdet_input_dev->keybit);
@@ -3320,7 +3522,9 @@ int mt_accdet_probe(struct platform_device *dev)
 			ret);
 		goto err_input_reg;
 	}
-
+#ifdef ACCDET_EXTCON_CABLE
+    accdet_register_extcon_device(dev);
+#endif
 	ret = accdet_create_attr(&accdet_driver_hal.driver);
 	if (ret) {
 		pr_notice("%s create_attr fail, ret = %d\n", __func__, ret);
@@ -3333,6 +3537,10 @@ int mt_accdet_probe(struct platform_device *dev)
 	micbias_timer.expires = jiffies + MICBIAS_DISABLE_TIMER;
 	accdet_init_timer.expires = jiffies + ACCDET_INIT_WAIT_TIMER;
 	/* the third argument may include TIMER_* flags */
+#ifdef CONFIG_WORKAROUND_OPEN_CABLE
+	timer_setup(&ab_check_timer, ab_check_timerhandler, 0);
+	ab_check_timer.expires = jiffies + AB_CHECK_TIME;
+#endif
 
 	/* wake lock */
 	accdet_irq_lock = wakeup_source_register(NULL, "accdet_irq_lock");
@@ -3454,6 +3662,9 @@ void mt_accdet_remove(void)
 	destroy_workqueue(dis_micbias_workqueue);
 	destroy_workqueue(accdet_workqueue);
 	input_unregister_device(accdet_input_dev);
+#ifdef ACCDET_EXTCON_CABLE
+	accdet_unregister_extcon_device();
+#endif
 	input_free_device(accdet_input_dev);
 	device_del(accdet_device);
 	class_destroy(accdet_class);
