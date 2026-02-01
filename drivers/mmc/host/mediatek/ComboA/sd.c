@@ -3666,7 +3666,8 @@ start_tune:
 	switch (mmc->ios.timing) {
 	case MMC_TIMING_UHS_SDR104:
 	case MMC_TIMING_UHS_SDR50:
-		pr_notice("msdc%d: SD UHS_SDR104/UHS_SDR50 re-autok %d times\n",
+	case MMC_TIMING_UHS_DDR50:
+		pr_notice("msdc%d: SD UHS_SDR104/UHS_SDR50/UHS_DDR50 re-autok %d times\n",
 			host->id, ++host->reautok_times);
 #ifndef SD_RUNTIME_AUTOK_MERGE
 		ret = autok_execute_tuning(host, NULL);
