@@ -25,10 +25,20 @@
 #include <mt-plat/charger_class.h>
 #include <linux/alarmtimer.h>
 #endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+#include <linux/lge_ds3.h>
+#endif
+
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+#include <linux/pinctrl/pinctrl.h>
+#endif
 
 struct usbotg_boost {
 	struct platform_device *pdev;
 	struct charger_device *primary_charger;
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	struct charger_device *wless_charger;
+#endif
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	struct alarm otg_timer;
 	struct timespec endtime;
@@ -40,9 +50,11 @@ struct usbotg_boost {
 };
 static struct usbotg_boost *g_info;
 
+#ifndef CONFIG_LGE_USB
 static struct pinctrl *drvvbus;
 static struct pinctrl_state *drvvbus_high;
 static struct pinctrl_state *drvvbus_low;
+#endif
 
 #if CONFIG_MTK_GAUGE_VERSION == 30
 static void usbotg_alarm_start_timer(struct usbotg_boost *info)
@@ -102,6 +114,7 @@ static enum alarmtimer_restart
 
 int usb_otg_set_vbus(int is_on)
 {
+#ifndef CONFIG_LGE_USB
 	if (!IS_ERR(drvvbus)) {
 		if (is_on)
 			pinctrl_select_state(drvvbus, drvvbus_high);
@@ -110,13 +123,23 @@ int usb_otg_set_vbus(int is_on)
 
 		return 0;
 	}
+#endif
 
 	if (!g_info)
 		return -1;
 
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	if (is_on) {
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+		charger_dev_enable(g_info->wless_charger, false);
+#endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(true);
+#endif
 		charger_dev_enable_otg(g_info->primary_charger, true);
+#ifdef CONFIG_LGE_USB
+		charger_dev_set_boost_voltage(g_info->primary_charger, 5100000);
+#endif
 		charger_dev_set_boost_current_limit(g_info->primary_charger,
 			1500000);
 		charger_dev_kick_wdt(g_info->primary_charger);
@@ -124,18 +147,43 @@ int usb_otg_set_vbus(int is_on)
 	} else {
 		charger_dev_enable_otg(g_info->primary_charger, false);
 		enable_boost_polling(false);
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+		charger_dev_enable(g_info->wless_charger, true);
+#endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(false);
+#endif
 	}
 #else
 	if (is_on) {
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(true);
+#endif
 		charger_dev_enable_otg(g_info->primary_charger, true);
+#ifdef CONFIG_LGE_USB
+		charger_dev_set_boost_voltage(g_info->primary_charger, 5100000);
+#endif
 		charger_dev_set_boost_current_limit(g_info->primary_charger,
 			1500000);
 	} else {
 		charger_dev_enable_otg(primary_charger, false);
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(false);
+#endif
 	}
 #endif
 	return 0;
 }
+
+#ifdef CONFIG_LGE_USB
+void control_otg_en(bool en)
+{
+	if (en)
+		devm_pinctrl_get_select(&g_info->pdev->dev, "otg_enable");
+	else
+		devm_pinctrl_get_select(&g_info->pdev->dev, "otg_disable");
+}
+#endif
 
 static int usbotg_boost_probe(struct platform_device *pdev)
 {
@@ -143,6 +191,7 @@ static int usbotg_boost_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
 
+#ifndef CONFIG_LGE_USB
 	drvvbus = devm_pinctrl_get(dev);
 	if (IS_ERR(drvvbus)) {
 		pr_notice("Cannot find usb pinctrl!\n");
@@ -159,6 +208,7 @@ static int usbotg_boost_probe(struct platform_device *pdev)
 		}
 		return 0;
 	}
+#endif
 
 	info = devm_kzalloc(&pdev->dev, sizeof(struct usbotg_boost),
 		GFP_KERNEL);
@@ -172,6 +222,12 @@ static int usbotg_boost_probe(struct platform_device *pdev)
 		pr_info("%s: get primary charger device failed\n", __func__);
 		return -ENODEV;
 	}
+
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	info->wless_charger = get_charger_by_name("wless_chg");
+	if (!info->wless_charger)
+		pr_info("%s: get wireless charger device failed\n", __func__);
+#endif
 
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	alarm_init(&info->otg_timer, ALARM_BOOTTIME,
