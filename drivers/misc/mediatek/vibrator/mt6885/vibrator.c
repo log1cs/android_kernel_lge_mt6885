@@ -41,18 +41,22 @@ static int debug_enable_vib_hal = 1;
 
 void vibr_Enable_HW(void)
 {
+#if !defined(CONFIG_LGE_USB_ANX7418) || !defined(CONFIG_LGE_USB_TUSB546)
 #ifdef CONFIG_MTK_PMIC_NEW_ARCH
 	pmic_set_register_value(PMIC_RG_LDO_VIBR_EN, 1);
 	mdelay(OC_INTR_INIT_DELAY);
 	pmic_enable_interrupt(INT_VIBR_OC, 1, "vibr");
 #endif
+#endif
 }
 
 void vibr_Disable_HW(void)
 {
+#if !defined(CONFIG_LGE_USB_ANX7418) || !defined(CONFIG_LGE_USB_TUSB546)
 #ifdef CONFIG_MTK_PMIC_NEW_ARCH
 	pmic_enable_interrupt(INT_VIBR_OC, 0, "vibr");
 	pmic_set_register_value(PMIC_RG_LDO_VIBR_EN, 0);
+#endif
 #endif
 }
 
