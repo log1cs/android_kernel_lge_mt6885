@@ -32,12 +32,15 @@ subdir-ccflags-y += -I$(srctree)/drivers/staging/android/ion/mtk
 
 ifeq ($(CONFIG_SND_SOC_MTK_AUDIO_DSP),y)
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/audio_ipi/common/framework/
+
+# TFADSP_BYPASS_ISSUE_WA
+subdir-ccflags-y += -I$(srctree)/sound/soc/mediatek/audio_dsp/
 endif
 
 ifeq ($(CONFIG_MTK_AUDIODSP_SUPPORT),y)
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/adsp/$(MTK_PLATFORM)
 endif
 
-ifeq ($(CONFIG_SND_SOC_AW87339),y)
-subdir-ccflags-y += -I$(srctree)/sound/soc/codecs/aw87339/$(MTK_PROJECT)/
+ifeq ($(CONFIG_SND_SOC_TFA9878),y)
+ccflags-y += -DMTK_TFA_STEREO
 endif

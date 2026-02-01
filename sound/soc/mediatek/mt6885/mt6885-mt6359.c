@@ -1147,9 +1147,16 @@ static int mt6885_mt6359_dev_probe(struct platform_device *pdev)
 	struct device_node *platform_node, *codec_node, *spk_node, *dsp_node;
 	struct snd_soc_dai_link *spk_out_dai_link, *spk_iv_dai_link;
 	int ret, i;
-	int spk_out_dai_link_idx, spk_iv_dai_link_idx;
+	int spk_out_dai_link_idx = 0, spk_iv_dai_link_idx = 0;
 	const char *name;
-
+#if defined(CONFIG_SND_SOC_TFA9878)
+	ret = mtk_spk_update_dai_link(card, pdev, &mt6885_mt6359_i2s_ops);
+	if (ret) {
+		dev_err(&pdev->dev, "%s(), mtk_spk_update_dai_link error\n",
+			__func__);
+		return -EINVAL;
+	}
+#else
 	ret = mtk_spk_update_info(card, pdev,
 				  &spk_out_dai_link_idx, &spk_iv_dai_link_idx,
 				  &mt6885_mt6359_i2s_ops);
@@ -1158,9 +1165,14 @@ static int mt6885_mt6359_dev_probe(struct platform_device *pdev)
 			__func__);
 		return -EINVAL;
 	}
+#endif
 
 	spk_out_dai_link = &mt6885_mt6359_dai_links[spk_out_dai_link_idx];
 	spk_iv_dai_link = &mt6885_mt6359_dai_links[spk_iv_dai_link_idx];
+    pr_info("%s _name = %s  _codec_name = %s link_idx = %d\n", __func__,
+                 spk_out_dai_link->name,
+                 spk_out_dai_link->codec_name,
+                 spk_out_dai_link_idx);
 	if (!spk_out_dai_link->codec_dai_name &&
 	    !spk_iv_dai_link->codec_dai_name) {
 		spk_node = of_get_child_by_name(pdev->dev.of_node,
@@ -1218,11 +1230,16 @@ static int mt6885_mt6359_dev_probe(struct platform_device *pdev)
 			"Property 'audio-codec' missing or invalid\n");
 		return -EINVAL;
 	}
+	pr_info("[peter] card num = %d\n", card->num_links);
 	for (i = 0; i < card->num_links; i++) {
 		if (mt6885_mt6359_dai_links[i].codec_name ||
 		    i == spk_out_dai_link_idx ||
 		    i == spk_iv_dai_link_idx)
 			continue;
+#if defined(CONFIG_SND_SOC_TFA9878)
+		if (mt6885_mt6359_dai_links[i].num_codecs)
+			continue;
+#endif
 		mt6885_mt6359_dai_links[i].codec_of_node = codec_node;
 	}
 
