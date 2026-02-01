@@ -120,8 +120,7 @@
 #define TIME_MAX(a, b) ((a) >= (b) ? (a) : (b))
 #define DIFF_ABS(a, b) (((a) >= (b)) ? ((a) - (b)) : ((b) - (a)))
 #define for_each_clusters(i)	for (i = 0; i < g_cluster_num; i++)
-#define CORE_CAP(cls, opp)	((opp >= 0 && opp < CPU_OPP_NUM) \
-	? (cpu_dvfs_tbl[cls].capacity_ratio[opp]) : (0))
+#define CORE_CAP(cls, opp)	(cpu_dvfs_tbl[cls].capacity_ratio[opp])
 #define NEXT_CLS(cluster) \
 	((max_cluster > min_cluster) \
 	? (cluster + 1) : (cluster - 1))
@@ -671,7 +670,8 @@ static void eara_thrm_cpu_power_limit(int limit)
 		eara_thrm_systrace(cur_max_pid, final_limit, "cpu_limit");
 		cur_cpu_pb = final_limit;
 		apthermolmt_set_cpu_power_limit(&ap_eara, final_limit);
-	}
+	} else
+		EARA_THRM_LOGE("cpu budget %d\n", cur_cpu_pb);
 }
 
 static void eara_thrm_gpu_power_limit(int limit)
@@ -759,7 +759,8 @@ static void thrm_pb_turn_cont_locked(int input)
 	if (input == is_controllable)
 		return;
 
-	EARA_THRM_LOGD("control %d\n", input);
+	EARA_THRM_LOGD("control %d (%d)(%d, %llu)\n",
+		input, g_total_pb, cur_max_pid, cur_max_bufid);
 
 	is_controllable = input;
 	pass_perf_first_hint(input);
@@ -1696,9 +1697,6 @@ void eara_thrm_pb_frame_start(int pid, unsigned long long bufid,
 	if (!is_enable || !is_throttling)
 		goto exit;
 
-	if (cpu_time == -1)
-		goto exit;
-
 	if (enable_debug_log) {
 		rcu_read_lock();
 		tsk = find_task_by_vpid(pid);
@@ -1902,8 +1900,8 @@ void eara_thrm_pb_enqueue_end(int pid, unsigned long long bufid,
 
 	if (!pid || !bufid || !gpu_time || !gpu_freq || gpu_time == -1
 		|| gpu_time > TOO_LONG_TIME || gpu_time < TOO_SHORT_TIME) {
-		EARA_THRM_LOGE("%s:gpu_time %d, gpu_freq %d\n",
-				__func__, gpu_time, gpu_freq);
+		EARA_THRM_LOGE("%s:(%d, %llu), gpu_time %d, gpu_freq %d\n",
+				__func__, pid, bufid, gpu_time, gpu_freq);
 		if (pid && is_major_pair_locked(pid, bufid)) {
 			set_major_pair_locked(0, 0, 0);
 			thrm_pb_turn_cont_locked(0);
