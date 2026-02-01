@@ -1273,9 +1273,11 @@ unsigned int mt_gpufreq_get_dvfs_en(void)
 unsigned int mt_gpufreq_not_ready(void)
 {
 	if (IS_ERR(g_pmic->reg_vgpu) || IS_ERR(g_pmic->reg_vsram_gpu)) {
+#if 0
 		gpufreq_pr_info("VGPU: %lu, VSRAM_GPU: %ld not initialized\n",
 			PTR_ERR(g_pmic->reg_vgpu),
 			PTR_ERR(g_pmic->reg_vsram_gpu));
+#endif
 		return true;
 	} else {
 		return false;
@@ -2309,6 +2311,25 @@ out:
 	return (ret < 0) ? ret : count;
 }
 
+#ifdef CONFIG_LGE_VSYNC_SKIP
+/*********************************
+ * show current/max gpu frequency
+ *********************************/
+static int mt_gpufreq_cur_freq_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", g_cur_opp_freq);
+
+	return 0;
+}
+
+static int mt_gpufreq_max_freq_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", g_opp_table[g_segment_max_opp_idx].gpufreq_khz);
+
+	return 0;
+}
+#endif
+
 /*
  * PROCFS : initialization
  */
@@ -2323,6 +2344,10 @@ PROC_FOPS_RW(gpufreq_aging_enable);
 PROC_FOPS_RW(gpufreq_limit_table);
 PROC_FOPS_RO(gpufreq_dfd_test);
 PROC_FOPS_RW(gpufreq_dfd_force_dump);
+#ifdef CONFIG_LGE_VSYNC_SKIP
+PROC_FOPS_RO(gpufreq_cur_freq);
+PROC_FOPS_RO(gpufreq_max_freq);
+#endif
 
 static int __mt_gpufreq_create_procfs(void)
 {
@@ -2346,6 +2371,10 @@ static int __mt_gpufreq_create_procfs(void)
 		PROC_ENTRY(gpufreq_limit_table),
 		PROC_ENTRY(gpufreq_dfd_test),
 		PROC_ENTRY(gpufreq_dfd_force_dump),
+#ifdef CONFIG_LGE_VSYNC_SKIP
+		PROC_ENTRY(gpufreq_cur_freq),
+		PROC_ENTRY(gpufreq_max_freq),
+#endif
 	};
 
 	dir = proc_mkdir("gpufreq", NULL);
