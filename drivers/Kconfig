@@ -215,4 +215,10 @@ source "drivers/tee/Kconfig"
 
 source "drivers/mux/Kconfig"
 
+source "drivers/nfc/Kconfig"
+
+source "drivers/tspdrv/Kconfig"
+
+source "drivers/switch/Kconfig"
+
 endmenu
