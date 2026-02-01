@@ -601,6 +601,25 @@ int mtk_pe40_get_init_watt(struct charger_manager *pinfo)
 	return voltage1 * ibus1;
 }
 
+#ifdef CONFIG_LGE_PM
+static bool mtk_pe40_is_ta_valid(struct charger_manager *pinfo)
+{
+	struct adapter_power_cap *tacap = &pinfo->pe4.cap;
+	int min_mv = INT_MAX;
+	int idx = 0;
+
+	for (idx = 0; idx < tacap->nr; idx++) {
+		if (tacap->type[idx] != MTK_PD_APDO)
+			return false;
+		min_mv = min(min_mv, tacap->min_mv[idx]);
+	}
+
+	if (min_mv >= 5000)
+		return false;
+
+	return true;
+}
+#endif
 
 int mtk_pe40_init_state(struct charger_manager *pinfo)
 {
@@ -631,6 +650,12 @@ int mtk_pe40_init_state(struct charger_manager *pinfo)
 
 	pe40 = &pinfo->pe4;
 	mtk_pe40_init_cap(pinfo);
+#ifdef CONFIG_LGE_PM
+	if (!mtk_pe40_is_ta_valid(pinfo)) {
+		chr_err("[pe40_i0] err:0 invalid ta\n");
+		goto stop;
+	}
+#endif
 	pinfo->pe4.is_connect = true;
 	voltage = 0;
 	mtk_pe40_get_setting_by_watt(pinfo, &voltage, &adapter_ibus,
@@ -835,6 +860,11 @@ retry:
 err:
 	mtk_pe40_end(pinfo, 2, false);
 	return 0;
+#ifdef CONFIG_LGE_PM
+stop:
+	mtk_pe40_end(pinfo, 3, false);
+	return 0;
+#endif
 }
 
 int mtk_pe40_safety_check(struct charger_manager *pinfo)

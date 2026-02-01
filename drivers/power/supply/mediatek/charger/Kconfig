@@ -204,3 +204,8 @@ config LOAD_SWITCH_RT9750
 	  It is a load switch,
 	  which is good for direct charge.
 	  It depends on config MTK_CHARGER.
+	  
+config LGE_SAR_CONTROLLER_USB_DETECT
+	bool "LGE_SAR_CONTROLLER_USB_DETECT support"
+	help
+	  Support LGE_SAR_CONTROLLER_USB_DETECT feature
