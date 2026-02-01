@@ -17,6 +17,10 @@ ccflags-y += \
 	-I$(srctree)/drivers/misc/mediatek/base/power/include	\
 	-I$(srctree)/drivers/misc/mediatek/base/power/$(CONFIG_MTK_PLATFORM)	\
 
+ifeq ($(CONFIG_LGE_PM_TMR), y)
+ccflags-y += \
+	-I$(srctree)/drivers/misc/mediatek/thermal/common/inc/
+endif
 ifneq (,$(findstring 3gear,$(PROJECT_DTB_NAMES)))
 ccflags-y += -I$(PPM_ROOT_DIR)/src/mach/mt6893
 else
@@ -63,6 +67,7 @@ obj-y += mtk_ppm_policy_lcm_off.o
 obj-y += mtk_ppm_policy_hard_user_limit.o
 obj-y += mtk_ppm_policy_user_limit.o
 obj-y += mtk_ppm_policy_force_limit.o
+obj-$(CONFIG_LGE_PM_MTK_GAME_MODE) += lge_ppm_policy_game_mode.o
 # for test purpose
 obj-y += mtk_ppm_policy_ut.o
 

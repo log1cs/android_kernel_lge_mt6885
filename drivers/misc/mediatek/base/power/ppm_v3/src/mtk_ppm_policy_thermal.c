@@ -23,6 +23,16 @@
 
 #include "mtk_ppm_internal.h"
 
+#ifdef CONFIG_LGE_PM_TMR
+#include <linux/delay.h>
+#include <ap_thermal_limit.h>
+#include <mt-plat/mtk_thermal_monitor.h>
+
+#define TMR_SHUTDOWN 0
+#define TMR_IGN_TEMP 69000
+
+static struct delayed_work tmr_timer;
+#endif
 
 static void ppm_thermal_update_limit_cb(void);
 static void ppm_thermal_status_change_cb(bool enable);
@@ -77,6 +87,11 @@ unsigned int mt_ppm_thermal_get_min_power(void)
 unsigned int mt_ppm_thermal_get_max_power(void)
 {
 	return (unsigned int)ppm_get_max_pwr_idx();
+}
+
+unsigned int mt_ppm_thermal_get_idx_power(unsigned int idx_num)
+{
+	return (unsigned int)ppm_get_pwr_idx(idx_num);
 }
 
 unsigned int mt_ppm_thermal_get_cur_power(void)
@@ -186,8 +201,68 @@ static int ppm_thermal_cur_power_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+#ifdef CONFIG_LGE_PM_TMR
+static void apthermolmt_set_tmr_cpu_power_boost_work(struct work_struct *work)
+{
+	apthermolmt_set_tmr_cpu_power_boost(TMR_SHUTDOWN);
+}
+
+static int ppm_tmr_boost_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "updated tmr power budget = %d\n",
+		thermal_policy.req.power_budget);
+	seq_printf(m, "PPM thermal activate = %d\n",
+		thermal_policy.is_activated);
+
+	return 0;
+}
+
+static ssize_t ppm_tmr_boost_proc_write(struct file *file,
+	const char __user *buffer, size_t count, loff_t *pos)
+{
+	unsigned int timeout = 5000;
+	unsigned int tmr_budget = 0;
+	static bool scheduling_work = false;
+	int temp = 25000;
+
+	char *buf = ppm_copy_from_user_for_proc(buffer, count);
+
+	if (!buf)
+		return -EINVAL;
+
+	if (sscanf(buf, "%u", &tmr_budget) == 1)
+	{
+		temp = mtk_thermal_get_temp(MTK_THERMAL_SENSOR_AP);
+
+		if (temp == -127000)
+			temp = TMR_IGN_TEMP;
+
+		if ((temp < TMR_IGN_TEMP) || (tmr_budget == 0))
+			apthermolmt_set_tmr_cpu_power_boost(tmr_budget);
+
+		if (tmr_budget) {
+			if (scheduling_work)
+				cancel_delayed_work(&tmr_timer);
+			schedule_delayed_work(&tmr_timer, msecs_to_jiffies(timeout));
+			scheduling_work = true;
+		} else {
+			cancel_delayed_work(&tmr_timer);
+			scheduling_work = false;
+		}
+	} else {
+		ppm_err("@%s: Invalid input!\n", __func__);
+	}
+
+	free_page((unsigned long)buf);
+	return count;
+}
+#endif
+
 PROC_FOPS_RW(thermal_limit);
 PROC_FOPS_RO(thermal_cur_power);
+#ifdef CONFIG_LGE_PM_TMR
+PROC_FOPS_RW(tmr_boost);
+#endif
 
 static int __init ppm_thermal_policy_init(void)
 {
@@ -201,9 +276,16 @@ static int __init ppm_thermal_policy_init(void)
 	const struct pentry entries[] = {
 		PROC_ENTRY(thermal_limit),
 		PROC_ENTRY(thermal_cur_power),
+#ifdef CONFIG_LGE_PM_TMR
+		PROC_ENTRY(tmr_boost),
+#endif
 	};
 
 	FUNC_ENTER(FUNC_LV_POLICY);
+
+#ifdef CONFIG_LGE_PM_TMR
+	INIT_DELAYED_WORK(&tmr_timer, apthermolmt_set_tmr_cpu_power_boost_work);
+#endif
 
 	/* create procfs */
 	for (i = 0; i < ARRAY_SIZE(entries); i++) {
