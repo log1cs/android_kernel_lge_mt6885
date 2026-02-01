@@ -55,9 +55,21 @@ static int vconn_gpio;
 static unsigned char vconn_on;
 #endif
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static const char *const pd_cable_string[] = {
+	"TCPC_CABLE_TYPE_NONE",
+	"TCPC_CABLE_TYPE_A2C",
+	"TCPC_CABLE_TYPE_C2C",
+	"TCPC_CABLE_TYPE_MAX",
+};
+#endif
+
 #if CONFIG_MTK_GAUGE_VERSION == 30
 static struct charger_device *primary_charger;
 static struct charger_consumer *chg_consumer;
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+static struct charger_device *wless_charger;
+#endif
 #endif
 
 #if CONFIG_MTK_GAUGE_VERSION == 20
@@ -192,23 +204,36 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 		    (pd_sink_current_new != pd_sink_current_old)) {
 			pd_sink_voltage_old = pd_sink_voltage_new;
 			pd_sink_current_old = pd_sink_current_new;
-			if ((!pd_sink_voltage_old || !pd_sink_current_old) &&
-			    (pd_sink_voltage_new && pd_sink_current_new)) {
+			if (pd_sink_voltage_new && pd_sink_current_new) {
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+				/*
+				 * charger_manager_enable_power_path() has been moved
+				 * to mt_charger_set_property() in mtk_chg_type_det.c
+				 */
+				charger_dev_enable(wless_charger, false);
+#else /* MediaTek */
+				/* enable charger */
 #if CONFIG_MTK_GAUGE_VERSION == 30
 				charger_manager_enable_power_path(chg_consumer,
 					MAIN_CHARGER, true);
 #else
 				mtk_chr_pd_enable_power_path(1);
 #endif
-			} else if ((pd_sink_voltage_old &&
-				    pd_sink_current_old) &&
-				   (!pd_sink_voltage_new ||
-				    !pd_sink_current_new) && !tcpc_kpoc) {
+#endif
+			} else if (!tcpc_kpoc) {
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+				/*
+				 * charger_manager_enable_power_path() has been moved
+				 * to mt_charger_set_property() in mtk_chg_type_det.c
+				 */
+				charger_dev_enable(wless_charger, true);
+#else /* MediaTek */
 #if CONFIG_MTK_GAUGE_VERSION == 30
 				charger_manager_enable_power_path(chg_consumer,
 					MAIN_CHARGER, false);
 #else
 				mtk_chr_pd_enable_power_path(0);
+#endif
 #endif
 			}
 		}
@@ -264,8 +289,13 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 		}
 		break;
 	case TCP_NOTIFY_CABLE_TYPE:
+		#ifdef CONFIG_LGE_USB_TYPE_C
+		pr_info("%s cable type = [%s]\n", __func__,
+			pd_cable_string[noti->cable_type.type]);
+		#else
 		pr_info("%s cable type = %d\n", __func__,
 			noti->cable_type.type);
+		#endif
 		break;
 	case TCP_NOTIFY_PLUG_OUT:
 		pr_info("%s typec plug out\n", __func__);
@@ -312,6 +342,11 @@ static int rt_pd_manager_probe(struct platform_device *pdev)
 		pr_err("%s: get charger consumer device failed\n", __func__);
 		return -ENODEV;
 	}
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	wless_charger = get_charger_by_name("wless_chg");
+	if (!wless_charger)
+		pr_info("%s: get wireless charger device failed\n", __func__);
+#endif
 #endif /* CONFIG_MTK_GAUGE_VERSION == 30 */
 
 #if 0 /* vconn is from vsys on mt6759 */
