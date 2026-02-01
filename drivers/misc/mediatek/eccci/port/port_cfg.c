@@ -250,10 +250,6 @@ static struct port_t md1_ccci_ports[] = {
 	{CCCI_EPDG4_TX, CCCI_EPDG4_RX, 1, 1, 0xFF, 0xFF,
 		MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 40, "ccci_epdg4",},
-	/* misc kernel port */
-	{CCCI_MIPI_CHANNEL_TX, CCCI_MIPI_CHANNEL_RX, 1, 1, 0xFF, 0xFF,
-		MD1_NORMAL_HIF, 0,
-		&ccci_misc_port_ops, 0xFF, "ccci_misc",},
 /* IPC char port minor= minor idx + CCCI_IPC_MINOR_BASE(100) */
 	{CCCI_IPC_TX, CCCI_IPC_RX, 1, 1, 0xFF, 0xFF,
 		MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,

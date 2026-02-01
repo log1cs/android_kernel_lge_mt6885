@@ -31,6 +31,10 @@
 #define DB_OPT_FTRACE   (0)	/* Dummy macro define to avoid build error */
 #endif
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 static void ccci_aed_v2(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
 	char *aed_str, int db_opt)
 {
@@ -124,6 +128,11 @@ static void ccci_aed_v2(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
 	}
 }
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+static char assert_category[32];
+static char assert_keyword[32];
+#endif
+
 static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 	struct debug_info_t *debug_info, char *ex_info)
 {
@@ -135,6 +144,12 @@ static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 
 	switch (debug_info->type) {
 	case MD_EX_DUMP_ASSERT:
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		memset(assert_category, 0x0, sizeof(assert_category));
+		memset(assert_keyword, 0x0, sizeof(assert_keyword));
+		mdee_get_assert_category(debug_info->assert.file_name,
+			assert_category, assert_keyword);
+#endif
 		CCCI_ERROR_LOG(md_id, FSM, "filename = %s\n",
 			debug_info->assert.file_name);
 		CCCI_ERROR_LOG(md_id, FSM, "line = %d\n",
@@ -153,6 +168,11 @@ static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 			debug_info->assert.parameters[0],
 			debug_info->assert.parameters[1],
 			debug_info->assert.parameters[2]);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		CCCI_ERROR_LOG(md_id, FSM,
+			"category = %s, keyword = %s\n",
+			assert_category, assert_keyword);
+#endif
 		break;
 	case MD_EX_DUMP_3P_EX:
 	case MD_EX_CC_C2K_EXCEPTION:
@@ -486,6 +506,31 @@ err_exit:
 	kfree(ex_info_temp);
 	kfree(ex_info_buf);
 	kfree(i_bit_ex_info);
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	if (debug_info && debug_info->type == MD_EX_DUMP_ASSERT) {
+		if (!strcmp(assert_category, "RF"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_RF);
+		else if (!strcmp(assert_category, "AUDIO"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_AUDIO);
+		else if (!strcmp(assert_category, "GPS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_GPS);
+		else if (!strcmp(assert_category, "PS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_PS);
+		else
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_BSP);
+		lge_set_modem_info(debug_info->type);
+	} else if (debug_info && (
+				debug_info->type == MD_EX_DUMP_3P_EX ||
+				debug_info->type == MD_EX_DUMP_2P_EX ||
+				debug_info->type == MD_EX_DUMP_EMI_CHECK)) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_FATAL);
+		lge_set_modem_info(debug_info->type);
+	} else if (debug_info && debug_info->type != MD_EX_DUMP_INVALID) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_UNKNOWN_CRASH);
+		lge_set_modem_info(debug_info->type);
+	}
+#endif
 }
 
 static char mdee_plstr[MD_EX_PL_FATALE_TOTAL + MD_EX_OTHER_CORE_EXCEPTIN -

@@ -128,7 +128,6 @@ static void ccci_scp_md_state_sync_work(struct work_struct *work)
 		};
 		break;
 	case MD_STATE_EXCEPTION:
-	case MD_STATE_INVALID:
 		ccci_scp_ipi_send(scp_ctl->md_id,
 			CCCI_OP_MD_STATE, &state);
 		break;
@@ -195,10 +194,6 @@ static void ccci_scp_ipi_rx_work(struct work_struct *work)
 					ipi_msg_ptr->md_id);
 				ccci_scp_ipi_send(ipi_msg_ptr->md_id,
 					CCCI_OP_MD_STATE, &data);
-				break;
-			case SCP_CCCI_STATE_INVALID:
-				CCCI_NORMAL_LOG(ipi_msg_ptr->md_id, FSM,
-						"MD INVALID,scp send ack to ap\n");
 				break;
 			default:
 				break;
@@ -287,16 +282,7 @@ int fsm_ccism_init_ack_handler(int md_id, int data)
 #endif
 	return 0;
 }
-/* phase out:architecture design adjustment */
-/*
- *#ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
- *static int fsm_sim_lock_handler(int md_id, int data)
- *{
- *	fsm_monitor_send_message(md_id, CCCI_MD_MSG_RANDOM_PATTERN, 0);
- *	return 0;
- *}
- *#endif
- */
+
 static int fsm_sim_type_handler(int md_id, int data)
 {
 	struct ccci_per_md *per_md_data = ccci_get_per_md_data(md_id);
@@ -344,13 +330,6 @@ int fsm_scp_init(struct ccci_fsm_scp *scp_ctl)
 	register_ccci_sys_call_back(scp_ctl->md_id, CCISM_SHM_INIT_ACK,
 		fsm_ccism_init_ack_handler);
 #endif
-/* phase out:architecture design adjustment */
-/*
- *#ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
- *	register_ccci_sys_call_back(scp_ctl->md_id, SIM_LOCK_RANDOM_PATTERN,
- *		fsm_sim_lock_handler);
- *#endif
- */
 	register_ccci_sys_call_back(scp_ctl->md_id, MD_SIM_TYPE,
 		fsm_sim_type_handler);
 

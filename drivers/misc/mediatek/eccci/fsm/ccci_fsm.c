@@ -15,12 +15,22 @@
  * Author: Xiao Wang <xiao.wang@mediatek.com>
  */
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 #include "ccci_fsm_internal.h"
 #include <memory/mediatek/emi.h>
 
 #if (MD_GENERATION >= 6297)
 #include <mt-plat/mtk_ccci_common.h>
 #include "modem_secure_base.h"
+#endif
+
+#ifdef CONFIG_MTK_TC1_FEATURE
+#include "../tc1_interface/lg_partition.h"
+static void get_ntcode_data(void);
 #endif
 
 static struct ccci_fsm_ctl *ccci_fsm_entries[MAX_MD_NUM];
@@ -313,6 +323,56 @@ static void fsm_dump_boot_status(int md_id)
 		__func__, res.a0, res.a1, res.a2);
 }
 #endif
+#ifdef CONFIG_MTK_TC1_FEATURE
+	struct FactoryNetworkCode *temp_buf_ntcode = NULL;
+	char *temp_buf_svn = NULL;
+
+static void get_ntcode_data() {
+	bool result = false;
+	unsigned short networkCodeListNum = LGE_FAC_MAX_NETWORK_CODE_LIST_NUM;// NTcode Max num is 40
+
+	// get SVN
+	if (temp_buf_svn == NULL)
+		temp_buf_svn = (char *)kmalloc(EMMC_BLOCK_SIZE, GFP_KERNEL);
+	if (temp_buf_svn == NULL)
+	{
+		pr_err("temp_buf_svn alloc Fail!\n");
+	}
+	else
+	{
+		memset(temp_buf_svn, 0x00, EMMC_BLOCK_SIZE);
+		result = LGE_FacReadSVN_SBP(temp_buf_svn);
+		if (result == true)
+		{
+			pr_err("LGE_FacReadSVN_SBP OK!\n");
+		}
+		else
+		{
+			pr_err("LGE_FacReadSVN_SBP Fail!\n");
+		}
+	}
+  // get NTCODE
+  if (temp_buf_ntcode == NULL)
+		temp_buf_ntcode = (struct FactoryNetworkCode *)kmalloc(LGE_FAC_MAX_NETWORK_CODE_LIST_NUM*sizeof(struct FactoryNetworkCode), GFP_KERNEL);
+	if (temp_buf_ntcode == NULL)
+	{
+		pr_err("temp_buf_ntcode alloc Fail!\n");
+	}
+	else
+	{
+		memset(temp_buf_ntcode, 0xFF, LGE_FAC_MAX_NETWORK_CODE_LIST_NUM*sizeof(struct FactoryNetworkCode));
+		result = LGE_FacReadNetworkCode_SBP (temp_buf_ntcode, networkCodeListNum, LGE_FAC_MAX_NETWORK_CODE_LIST_NUM*sizeof(struct FactoryNetworkCode));
+		if (result == true)
+		{
+			pr_err("LGE_FacReadNetworkCode_SBP OK!\n");
+		}
+		else
+		{
+			pr_err("LGE_FacReadNetworkCode_SBP Fail!\n");
+		}
+	}
+}
+#endif
 
 static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 	struct ccci_fsm_command *cmd)
@@ -369,6 +429,9 @@ static void fsm_routine_start(struct ccci_fsm_ctl *ctl,
 		goto fail;
 	ctl->boot_count++;
 	count = 0;
+#ifdef CONFIG_MTK_TC1_FEATURE
+	get_ntcode_data();
+#endif
 	while (count < BOOT_TIMEOUT/EVENT_POLL_INTEVAL && !needforcestop) {
 		spin_lock_irqsave(&ctl->event_lock, flags);
 		if (!list_empty(&ctl->event_queue)) {
@@ -575,6 +638,26 @@ static void fsm_routine_wdt(struct ccci_fsm_ctl *ctl,
 		}
 	}
 	if (reset_md) {
+#if 0 // defined(CONFIG_LGE_HANDLE_PANIC)
+		pr_err("%s: entry - CCCI_IOC_MD_RESET\n", __func__);
+		if (lge_get_crash_handle_status()) {
+			unsigned int modem_status = lge_get_reboot_reason();
+			modem_status &= LGE_CRASH_SYS_MASK;
+
+			if (modem_status == LGE_CRASH_MODEM) {
+				dump_stack();
+				emergency_sync();
+				kernel_restart("LGE Reboot by Modem Exception "
+						"from CCCI_IOC_MD_RESET");
+				/*
+				 * block modem reset to maintain ddr
+				 */
+				while (1) {
+					msleep(10);
+				}
+			}
+		}
+#endif
 		fsm_monitor_send_message(ctl->md_id,
 			CCCI_MD_MSG_RESET_REQUEST, 0);
 		fsm_monitor_send_message(GET_OTHER_MD_ID(ctl->md_id),

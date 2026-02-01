@@ -15,12 +15,14 @@
 #define __ECCCI_INTERNAL_OPTION__
 
 /* platform info */
-#define MD_GENERATION       (6297)
-#define MD_PLATFORM_INFO    "6297"
-#define AP_PLATFORM_INFO    "MT6885"
+#define MD_GENERATION       (6293)
+#define MD_PLATFORM_INFO    "6293"
+#if defined(CONFIG_MACH_MT6765)
+	#define AP_PLATFORM_INFO    "MT6765"
+#elif defined(CONFIG_MACH_MT6761)
+	#define AP_PLATFORM_INFO    "MT6761"
+#endif
 #define CCCI_DRIVER_VER     0x20110118
-#define MT6297
-#define _97_REORDER_BAT_PAGE_TABLE_
 
 /* buffer management customization */
 #define CCCI_MTU            (3584-128)
@@ -38,10 +40,10 @@
 /* CCIF dump offset in MD SS debug region */
 #define CCCI_EE_OFFSET_CCIF_SRAM (1024 - CCCI_EE_SIZE_CCIF_SRAM)
 /* flag to tell WDT is triggered by EPON or not, in MD SS debug region */
-#define CCCI_EE_OFFSET_EPON_MD1 (0x2844)
+#define CCCI_EE_OFFSET_EPON_MD1 (0x1C24)
 #define CCCI_EE_OFFSET_EPON_MD3 (0x464)
 /* flag to enable MD power off checking or not, in MD SS debug region */
-#define CCCI_EE_OFFSET_EPOF_MD1 (0x2840)
+#define CCCI_EE_OFFSET_EPOF_MD1 (7*1024+0x234)
 #define CCCI_EE_SMEM_TOTAL_SIZE (64*1024)
 #define CCCI_SMEM_SIZE_RUNTIME_AP (0x800) /* AP runtime data size */
 #define CCCI_SMEM_SIZE_RUNTIME_MD (0x800) /* MD runtime data size */
@@ -53,39 +55,10 @@
 
 /* feature option, always try using platform info first! */
 #ifdef CONFIG_MTK_TINYSYS_SCP_SUPPORT
-//#define FEATURE_SCP_CCCI_SUPPORT
+#define FEATURE_SCP_CCCI_SUPPORT
 #endif
 /*#define ENABLE_EMI_PROTECTION*/
-/* #define FEATURE_LOW_BATTERY_SUPPORT */
 #define ENABLE_32K_CLK_LESS
-
-#define HW_CHECK_SUM_ENABLE
-#define HW_FRG_FEATURE_ENABLE
-#ifdef HW_FRG_FEATURE_ENABLE
-/* #define FRG_FEATURE_TEST */
-#ifdef FRG_FEATURE_TEST
-/* 1024 + 2432 = 3456 */
-#define DPMAIF_PKT_SIZE      (128*8) /* == 1024 */
-#define DPMAIF_FRG_SIZE      (128*19) /* 2432 */
-#else
-/* 1664 + 1920 = 3584 (> 3* 1024)+8 */
-#define DPMAIF_PKT_SIZE      (128*13) /* == 1664 */
-#define DPMAIF_FRG_SIZE      (128*15) /* 1920  */
-#endif
-#else
-#define DPMAIF_PKT_SIZE      (128*28) /* 3584 ==SKB_4K */
-#define DPMAIF_FRG_SIZE      (128) /* =_=, no used */
-#endif
-#define _HW_REORDER_SW_WORKAROUND_
-
 /*#define CCCI_LOG_LEVEL     1*/
-#define FEATURE_CLK_BUF
-/*#define DPMAIF_DEBUG_LOG*/
-#define DEBUG_FOR_CCB
-#define ENABLE_CPU_AFFINITY
-#define REFINE_BAT_OFFSET_REMOVE
-#define PIT_USING_CACHE_MEM
 
-/* LGE SIMLOCK, using shared memory */
-#define ENABLE_SECURITY_SHARE_MEMORY
 #endif
