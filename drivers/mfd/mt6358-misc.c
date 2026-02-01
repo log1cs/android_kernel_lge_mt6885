@@ -52,7 +52,7 @@
  * Day of Month (DOM): 1 ~ 31
  */
 
-#define RTC_DEFAULT_YEA		2010
+#define RTC_DEFAULT_YEA		2021
 #define RTC_DEFAULT_MTH		1
 #define RTC_DEFAULT_DOM		1
 
