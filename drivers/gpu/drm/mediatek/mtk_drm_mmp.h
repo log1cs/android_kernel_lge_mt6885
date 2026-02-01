@@ -14,8 +14,8 @@
 #ifndef __MTK_DRM_MMP_H__
 #define __MTK_DRM_MMP_H__
 
-#include "mmprofile.h"
-#include "mmprofile_function.h"
+#include "../../../misc/mediatek/mmp/mmprofile.h"
+#include "../../../misc/mediatek/mmp/mmprofile_function.h"
 #include "mtk_drm_ddp.h"
 
 #define MMP_CRTC_NUM 3
@@ -72,10 +72,6 @@ struct CRTC_MMP_Events {
 	mmp_event release_fence;
 	mmp_event update_present_fence;
 	mmp_event release_present_fence;
-	mmp_event update_sf_present_fence;
-	mmp_event release_sf_present_fence;
-	mmp_event warn_sf_pf_0;
-	mmp_event warn_sf_pf_2;
 	mmp_event atomic_begin;
 	mmp_event atomic_flush;
 	mmp_event enable_vblank;
@@ -93,6 +89,9 @@ struct CRTC_MMP_Events {
 	mmp_event backlight_grp;
 	mmp_event ddic_send_cmd;
 	mmp_event ddic_read_cmd;
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	mmp_event panel_tx_cmd_grp;
+#endif
 	mmp_event path_switch;
 	mmp_event user_cmd;
 	mmp_event check_trigger;
@@ -103,8 +102,6 @@ struct CRTC_MMP_Events {
 	mmp_event clk_change;
 	mmp_event layerBmpDump;
 	mmp_event layer_dump[6];
-	mmp_event cwbBmpDump;
-	mmp_event cwb_dump;
 };
 
 struct DRM_MMP_Events *get_drm_mmp_events(void);
@@ -112,9 +109,6 @@ struct CRTC_MMP_Events *get_crtc_mmp_events(unsigned long id);
 void drm_mmp_init(void);
 int mtk_drm_mmp_ovl_layer(struct mtk_plane_state *state,
 			  u32 downSampleX, u32 downSampleY);
-int mtk_drm_mmp_cwb_buffer(struct drm_crtc *crtc,
-	struct mtk_cwb_info *cwb_info,
-	void *buffer, unsigned int buf_idx);
 
 /* print mmp log for DRM_MMP_Events */
 #ifdef CONFIG_DRM_MEDIATEK

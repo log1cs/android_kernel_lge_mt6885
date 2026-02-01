@@ -14,11 +14,11 @@
 #ifndef _MTK_DRM_PMQOS_H_
 #define _MTK_DRM_PMQOS_H_
 
-#include "mmdvfs_pmqos.h"
+#include "../../../misc/mediatek/mmdvfs/mmdvfs_pmqos.h"
 #if defined(CONFIG_MACH_MT6779)
 #include "helio-dvfsrc-opp-mt6779.h"
 #elif defined(CONFIG_MACH_MT6885) || defined(CONFIG_MACH_MT6893)
-#include "helio-dvfsrc-opp-mt6885.h"
+#include "../../../devfreq/helio-dvfsrc-opp-mt6885.h"
 #include "dt-bindings/memory/mt6885-larb-port.h"
 #elif defined(CONFIG_MACH_MT6873)
 #include "helio-dvfsrc-opp-mt6873.h"

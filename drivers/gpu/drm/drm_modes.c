@@ -130,7 +130,7 @@ EXPORT_SYMBOL(drm_mode_probed_add);
  * according to the hdisplay, vdisplay, vrefresh.
  * It is based from the VESA(TM) Coordinated Video Timing Generator by
  * Graham Loveridge April 9, 2003 available at
- * http://www.elo.utfsm.cl/~elo212/docs/CVTd6r1.xls 
+ * http://www.elo.utfsm.cl/~elo212/docs/CVTd6r1.xls
  *
  * And it is copied from xf86CVTmode in xserver/hw/xfree86/modes/xf86cvt.c.
  * What I have done is to translate it by using integer calculation.
@@ -1015,6 +1015,9 @@ bool drm_mode_equal_no_clocks_no_stereo(const struct drm_display_mode *mode1,
 	    mode1->vsync_end == mode2->vsync_end &&
 	    mode1->vtotal == mode2->vtotal &&
 	    mode1->vscan == mode2->vscan &&
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_REFRESH_RATE_DIV)
+	    mode1->vrefresh == mode2->vrefresh &&
+#endif
 	    (mode1->flags & ~DRM_MODE_FLAG_3D_MASK) ==
 	     (mode2->flags & ~DRM_MODE_FLAG_3D_MASK))
 		return true;

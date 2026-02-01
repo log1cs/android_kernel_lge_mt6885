@@ -445,8 +445,8 @@ static void mtk_plane_atomic_update(struct drm_plane *plane,
 	}
 	DDPINFO("\n");
 
-	DDPFENCE("S+/%sL%d/e%d/id%d/mva0x%08llx/size0x%08lx/S%d\n",
-		mtk_crtc_index_spy(crtc_index),
+	DDPFENCE("S+/%s%d/L%d/e%d/id%d/mva0x%08llx/size0x%08lx/S%d\n",
+		drm_crtc_index(crtc) ? "E" : "P", drm_crtc_index(crtc), 
 		plane_index,
 		state->pending.enable,
 		state->pending.prop_val[PLANE_PROP_NEXT_BUFF_IDX],

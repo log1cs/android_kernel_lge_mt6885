@@ -21,6 +21,9 @@
 #include "mtk_dp_reg.h"
 #include "mtk_devinfo.h"
 
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+extern bool is_ds_connected(void);
+#endif
 
 u32 mtk_dp_read(struct mtk_dp *mtk_dp, u32 offset)
 {
@@ -83,10 +86,9 @@ unsigned long mtk_dp_atf_call(unsigned int cmd, unsigned int para)
 {
 #ifndef CONFIG_FPGA_EARLY_PORTING
 	struct arm_smccc_res res;
-	u32 x3 = (cmd << 16) | para;
 
 	arm_smccc_smc(MTK_SIP_DP_CONTROL, cmd, para,
-		x3, 0xFEFD, 0, 0, 0, &res);
+		0, 0, 0, 0, 0, &res);
 
 	DPTXDBG("%s cmd 0x%x, p1 0x%x, ret 0x%x-0x%x",
 		__func__, cmd, para, res.a0, res.a1);
@@ -1666,6 +1668,12 @@ bool mhal_DPTx_AuxWrite_Bytes(struct mtk_dp *mtk_dp,
 bool mhal_DPTx_SetSwingtPreEmphasis(struct mtk_dp *mtk_dp, int lane_num,
 	int swingValue, int preEmphasis)
 {
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+	if (is_ds_connected()) {
+		swingValue = 0x03;
+		preEmphasis = 0x00;
+	}
+#endif
 	DPTXMSG("lane%d, set Swing = %x, Emp =%x\n", lane_num,
 		swingValue, preEmphasis);
 
@@ -2043,6 +2051,32 @@ void mhal_DPTx_PHYSetting(struct mtk_dp *mtk_dp)
 	DPTXDBG("0x4C:%#010x, 0x4C:%#010x", value, msRead4Byte(mtk_dp, 0x114C));
 
 	msWrite4ByteMask(mtk_dp, 0x3690, BIT8, BIT8);
+}
+
+void mhal_DPTx_AdjustPHYSetting(struct mtk_dp *mtk_dp, BYTE c0, BYTE cp1)
+{
+	uint32_t reg = 0;
+	BYTE temp = 0;
+
+	temp = c0 & 0x3F;
+	reg = temp | (temp << 8) | (temp << 16) | (temp << 24);
+	msWrite4Byte(mtk_dp, 0x1138, reg);
+	msWrite4Byte(mtk_dp, 0x1238, reg);
+	msWrite4Byte(mtk_dp, 0x113C, reg);
+	msWrite4Byte(mtk_dp, 0x123C, reg);
+	reg = temp | (temp << 8);
+	msWrite4Byte(mtk_dp, 0x1140, reg);
+	msWrite4Byte(mtk_dp, 0x1240, reg);
+
+	temp = cp1 & 0x3F;
+	reg = temp | (temp << 8) | (temp << 16) | (temp << 24);
+	msWrite4Byte(mtk_dp, 0x1144, reg);
+	msWrite4Byte(mtk_dp, 0x1244, reg);
+	msWrite4Byte(mtk_dp, 0x1148, reg);
+	msWrite4Byte(mtk_dp, 0x1248, reg);
+	reg = temp | (temp << 8);
+	msWrite4Byte(mtk_dp, 0x114C, reg);
+	msWrite4Byte(mtk_dp, 0x124C, reg);
 }
 
 void mhal_DPTx_SSCOnOffSetting(struct mtk_dp *mtk_dp, bool bENABLE)

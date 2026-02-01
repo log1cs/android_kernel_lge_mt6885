@@ -31,6 +31,10 @@
 #include "mtk_log.h"
 #include "mtk_drm_mmp.h"
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 #define to_drm_private(x) container_of(x, struct mtk_drm_private, fb_helper)
 #define ALIGN_TO_32(x) ALIGN_TO(x, 32)
 
@@ -266,9 +270,6 @@ bool mtk_drm_lcm_is_connect(void)
 int _parse_tag_videolfb(unsigned int *vramsize, phys_addr_t *fb_base,
 			unsigned int *fps)
 {
-#ifdef CONFIG_MTK_DISP_NO_LK
-		return -1;
-#else
 	struct device_node *chosen_node;
 
 	*fps = 6000;
@@ -302,16 +303,22 @@ found:
 	DDPINFO("[DT][videolfb] fps	   = %d\n", *fps);
 
 	return 0;
-#endif
 }
 
 int free_fb_buf(void)
 {
+#if 0 //block for memory corruption in crash handler
 	unsigned long va_start = 0;
 	unsigned long va_end = 0;
 	phys_addr_t fb_base;
 	unsigned int vramsize, fps;
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+    if (lge_get_crash_handle_status()) {
+        DDPMSG("%s:skip free_fb_buf\n", __func__);
+        return 0;
+    }
+#endif
 	_parse_tag_videolfb(&vramsize, &fb_base, &fps);
 
 	if (!fb_base) {
@@ -326,6 +333,7 @@ int free_fb_buf(void)
 				   (void *)va_end, 0xff, "fbmem");
 	else
 		DDPINFO("%s:va invalid\n", __func__);
+#endif
 
 	return 0;
 }
