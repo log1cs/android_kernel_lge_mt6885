@@ -17,6 +17,9 @@
 #ifndef __MT6360_PMU_CHG_H
 #define __MT6360_PMU_CHG_H
 
+/* Define this macro if detecting apple samsung TA is needed */
+#define MT6360_APPLE_SAMSUNG_TA_SUPPORT
+
 /* Define this macro if DCD timeout is supported */
 #define CONFIG_MT6360_DCDTOUT_SUPPORT
 
@@ -69,6 +72,12 @@ struct mt6360_chg_platform_data {
 #define MT6360_MASK_VOREG	(0xFE)
 #define MT6360_SHFT_VOREG	(1)
 #define MT6360_VOREG_MAXVAL	(0x51)
+
+#ifdef CONFIG_LGE_USB
+/* MT6360_PMU_CHG_CTRL5 : 0x15 */
+#define MT6360_MASK_VOBST	(0xFC)
+#define MT6360_SHFT_VOBST	(2)
+#endif
 
 /* MT6360_PMU_CHG_CTRL6 : 0x16 */
 #define MT6360_MASK_MIVR	(0xFE)

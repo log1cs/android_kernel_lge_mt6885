@@ -35,6 +35,10 @@
 #include <mt-plat/mtk_auxadc_intf.h>
 #include "aee.h"
 
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+#include <linux/power/battery_cycle.h>
+#endif
+
 /*********************** MT6359 setting *********************/
 #define UNIT_FGCURRENT     (610352)
 /* mt6359 610.352 uA */
@@ -793,6 +797,12 @@ static int fgauge_initial(struct gauge_device *gauge_dev)
 
 	get_mtk_battery()->hw_status.pl_charger_status = is_charger_exist;
 
+#ifdef CONFIG_LGE_PM
+	if (bat_flag == 0)
+		is_bat_plugout = 1;
+	else
+		is_bat_plugout = 0;
+#else /* MediaTek */
 	if (is_charger_exist == 1) {
 		is_bat_plugout = 1;
 		fgauge_set_info(gauge_dev, GAUGE_2SEC_REBOOT, 0);
@@ -802,12 +812,17 @@ static int fgauge_initial(struct gauge_device *gauge_dev)
 		else
 			is_bat_plugout = 0;
 	}
+#endif
 
 	fgauge_set_info(gauge_dev, GAUGE_BAT_PLUG_STATUS, 1);
 	bat_plug_out_time = 31;	/*[12:8], 5 bits*/
 
 	fgauge_read_RTC_boot_status();
 
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+	if (bat_flag == 0)
+		battery_cycle_set_battery_removed();
+#endif
 
 	return 0;
 }

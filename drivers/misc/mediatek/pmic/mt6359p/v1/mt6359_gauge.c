@@ -35,6 +35,10 @@
 #include <mt-plat/mtk_auxadc_intf.h>
 #include "aee.h"
 
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+#include <linux/power/battery_cycle.h>
+#endif
+
 /*********************** MT6359 setting *********************/
 #define UNIT_FGCURRENT     (610352)
 /* mt6359 610.352 uA */
@@ -787,6 +791,12 @@ static int fgauge_initial(struct gauge_device *gauge_dev)
 
 	get_mtk_battery()->hw_status.pl_charger_status = is_charger_exist;
 
+#ifdef CONFIG_LGE_PM
+	if (bat_flag == 0)
+		is_bat_plugout = 1;
+	else
+		is_bat_plugout = 0;
+#else /* MediaTek */
 	if (is_charger_exist == 1) {
 		is_bat_plugout = 1;
 		fgauge_set_info(gauge_dev, GAUGE_2SEC_REBOOT, 0);
@@ -796,12 +806,17 @@ static int fgauge_initial(struct gauge_device *gauge_dev)
 		else
 			is_bat_plugout = 0;
 	}
+#endif
 
 	fgauge_set_info(gauge_dev, GAUGE_BAT_PLUG_STATUS, 1);
 	bat_plug_out_time = 31;	/*[12:8], 5 bits*/
 
 	fgauge_read_RTC_boot_status();
 
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+	if (bat_flag == 0)
+		battery_cycle_set_battery_removed();
+#endif
 
 	return 0;
 }
@@ -1870,12 +1885,6 @@ static void fgauge_set_nafg_intr_internal(int _prd, int _zcv_mv, int _thr_mv)
 	_zcv_reg = MV_to_REG_value(_zcv_mv);
 	_thr_reg = MV_to_REG_value(_thr_mv);
 
-	if (_thr_reg >= 32768) {
-		bm_err("[%s]nag_c_dltv_thr mv=%d ,thr_reg=%d,limit thr_reg to 32767\n",
-			__func__, _thr_mv, _thr_reg);
-		_thr_reg = 32767;
-	}
-
 	NAG_C_DLTV_Threashold_26_16 = (_thr_reg & 0xffff0000) >> 16;
 	NAG_C_DLTV_Threashold_15_0 = (_thr_reg & 0x0000ffff);
 
@@ -1892,7 +1901,7 @@ static void fgauge_set_nafg_intr_internal(int _prd, int _zcv_mv, int _thr_mv)
 
 	pmic_set_register_value(PMIC_AUXADC_NAG_VBAT1_SEL, 0);/* use Batsns */
 
-	bm_err("[fg_bat_nafg][fgauge_set_nafg_interrupt_internal] time[%d] zcv[%d:%d] thr[%d:%d] 26_16[0x%x] 15_00[0x%x] %d\n",
+	bm_debug("[fg_bat_nafg][fgauge_set_nafg_interrupt_internal] time[%d] zcv[%d:%d] thr[%d:%d] 26_16[0x%x] 15_00[0x%x] %d\n",
 		_prd, _zcv_mv, _zcv_reg, _thr_mv, _thr_reg,
 		NAG_C_DLTV_Threashold_26_16, NAG_C_DLTV_Threashold_15_0,
 		pmic_get_register_value(PMIC_AUXADC_NAG_VBAT1_SEL));
@@ -2110,6 +2119,7 @@ static int fgauge_set_zcv_interrupt_threshold(
 	return 0;
 }
 
+
 void reset_zcv_int(struct gauge_device *gauge_dev)
 {
 	struct timespec time, time_now, end_time;
@@ -2123,7 +2133,7 @@ void reset_zcv_int(struct gauge_device *gauge_dev)
 	msleep(30);
 
 	get_monotonic_boottime(&time_now);
-	time.tv_sec = (g_fg_zcv_det_iv + 1) * 3 * 60 + 5;
+	time.tv_sec = (g_fg_zcv_det_iv + 1) * 3 * 60 + 60;
 	time.tv_nsec = 0;
 
 	end_time = timespec_add(time_now, time);
