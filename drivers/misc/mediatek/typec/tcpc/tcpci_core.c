@@ -25,6 +25,10 @@
 #include "inc/tcpci.h"
 #include "inc/tcpci_typec.h"
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+struct tcpc_device *g_tcpc	= NULL;
+#endif
+
 #ifdef CONFIG_USB_POWER_DELIVERY
 #include "pd_dpm_prv.h"
 #include "inc/tcpm.h"
@@ -196,7 +200,7 @@ static ssize_t tcpc_show_property(struct device *dev,
 				"6: get_src_cap", "7: get_sink_cap",
 				"8: discover_id", "9: discover_cable");
 		if (ret < 0)
-			break;
+			dev_dbg(dev, "%s: ret=%d\n", __func__, ret);
 		break;
 	case TCPC_DESC_INFO:
 		i += snprintf(buf + i,
@@ -468,6 +472,10 @@ struct tcpc_device *tcpc_device_register(struct device *parent,
 	if (ret < 0)
 		dev_err(&tcpc->dev, "dual role usb init fail\n");
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
+
+#ifdef CONFIG_LGE_DUAL_SCREEN
+	g_tcpc	= tcpc;
+#endif
 
 	return tcpc;
 }

@@ -200,5 +200,11 @@ int tcpci_notify_request_bat_info(
 #endif	/* CONFIG_USB_PD_REV30 */
 
 #endif	/* CONFIG_USB_POWER_DELIVERY */
+#ifdef CONFIG_LGE_DUAL_SCREEN
+void ds3_tcpc_check_notify_DP_STATE(struct tcpc_device *tcpc);
+void ds3_tcpc_check_notify_DP_ATTENTION(struct tcpc_device *tcpc);
+void ds3_tcpc_check_notify_DP_HPD_STATE(struct tcpc_device *tcpc);
+void ds3_tcpc_check_notify_DP_HPD_STATE_OFF(struct tcpc_device *tcpc);
+#endif
 
 #endif /* #ifndef __LINUX_RT_TCPC_H */

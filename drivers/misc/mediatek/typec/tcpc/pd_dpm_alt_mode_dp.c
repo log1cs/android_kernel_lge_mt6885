@@ -20,6 +20,9 @@
 #include "inc/pd_dpm_core.h"
 #include "pd_dpm_prv.h"
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+#include <linux/lge_ds3.h>
+#endif
 #ifdef CONFIG_USB_POWER_DELIVERY
 #ifdef CONFIG_USB_PD_ALT_MODE
 
@@ -60,15 +63,24 @@ static inline bool dp_update_dp_connected_one(struct pd_port *pd_port,
 
 /*
  * If we support ufp_d & dfp_d both, we should decide to use which role.
+ * For dfp_u, the dp_connected is invalid, re-send dp_status.
+ * For ufp_u, the dp_connected is valid, wait for dp_config
+ *
+ * If we don`t support both, the dp_connected always is valid
+ *
  */
 
 static inline bool dp_update_dp_connected_both(struct pd_port *pd_port,
-			uint32_t dp_connected, uint32_t dp_local_connected)
+			uint32_t dp_connected, uint32_t dp_local_connected,
+			bool both_connected_valid)
 {
 	struct dp_data *dp_data = pd_get_dp_data(pd_port);
+	bool valid_connected = true;
 
-	if (dp_local_connected == DPSTS_BOTH_CONNECTED)
+	if (dp_local_connected == DPSTS_BOTH_CONNECTED) {
 		dp_data->local_status = pd_port->dp_second_connected;
+		valid_connected = both_connected_valid;
+	}
 
 	return true;
 }
@@ -586,17 +598,14 @@ static inline bool dp_dfp_u_update_dp_connected(struct pd_port *pd_port)
 		break;
 
 	case DPSTS_BOTH_CONNECTED:
-		dp_update_dp_connected_both(pd_port,
-				dp_connected, dp_local_connected);
+		valid_connected = dp_update_dp_connected_both(pd_port,
+				dp_connected, dp_local_connected, false);
 
-		if (dp_data->dfp_u_state == DP_DFP_U_STATUS_UPDATE) {
+		if (!valid_connected) {
 			DP_INFO("BOTH_SEL_ONE\r\n");
 			pd_put_tcp_vdm_event(pd_port,
 				TCP_DPM_EVT_DP_STATUS_UPDATE);
-		} else {
-			valid_connected = true;
 		}
-		break;
 	}
 
 	return valid_connected;
@@ -647,6 +656,11 @@ bool dp_dfp_u_notify_dp_status_update(struct pd_port *pd_port, bool ack)
 		if (valid_connected)
 			dp_dfp_u_request_dp_configuration(pd_port);
 	}
+
+#ifdef DS3_DEBUG
+	pr_info("%s OK DS3_DEBUG\n", __func__);
+#endif
+
 	return true;
 }
 
@@ -676,6 +690,10 @@ bool dp_dfp_u_notify_dp_configuration(struct pd_port *pd_port, bool ack)
 
 	tcpci_dp_notify_config_done(pd_port->tcpc_dev,
 		dp_data->local_config, dp_data->remote_config, ack);
+
+#ifdef DS3_DEBUG
+	pr_info("%s OK DS3_DEBUG\n", __func__);
+#endif
 
 	return true;
 }
@@ -708,9 +726,31 @@ bool dp_dfp_u_notify_attention(struct pd_port *pd_port,
 		break;
 	}
 
+#ifdef DS3_DEBUG
+	pr_info("%s OK DS3_DEBUG\n", __func__);
+#endif
+
 	return true;
 }
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+void set_ds3_start(bool hallic_state)
+{
+	struct pd_port	*pd_port	= &g_tcpc->pd_port;
+
+	if (hallic_state) {
+		DP_INFO("set_ds3_start: Dualscreen Hallic Connected\n");
+		pd_port->ds3_conn_started	= true;
+		/* startup or call discover_id */
+		//dp_dfp_u_set_state(pd_port, DP_DFP_U_DISCOVER_ID);
+	} else {
+		DP_INFO("set_ds3_start: Dualscreen Hallic Disconnected\n");
+		pd_port->ds3_conn_started	= false;
+		/* set dula role value */
+	}
+}
+EXPORT_SYMBOL(set_ds3_start);
+#endif
 #endif /* CONFIG_USB_PD_ALT_MODE_DFP */
 
 /* DP : UFP_U */
@@ -779,7 +819,7 @@ static inline bool dp_ufp_u_update_dp_connected(struct pd_port *pd_port)
 
 	case DPSTS_BOTH_CONNECTED:
 		valid_connected = dp_update_dp_connected_both(
-			pd_port, dp_connected, dp_local_connected);
+			pd_port, dp_connected, dp_local_connected, true);
 		break;
 
 	default:

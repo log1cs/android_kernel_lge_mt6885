@@ -32,6 +32,14 @@
 #include <linux/usb/class-dual-role.h>
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static const char * const tcpm_vbus_level_string[] = {
+	"VBUS_Safe0V(< 0.8V)",
+	"VBUS_Invalid(> 0.8V)",
+	"VBUS_Valid(> 4.5V)",
+};
+#endif
+
 /*
  * [BLOCK] TCPCI IRQ Handler
  */
@@ -96,7 +104,11 @@ static int tcpci_alert_power_status_changed(struct tcpc_device *tcpc_dev)
 #endif	/* CONFIG_USB_PD_DIRECT_CHARGE */
 
 	if (show_msg)
+#ifdef CONFIG_LGE_USB_TYPE_C
+		TCPC_INFO("power status changed=[%s]\r\n", tcpm_vbus_level_string[tcpc_dev->vbus_level]);
+#else
 		TCPC_INFO("ps_change=%d\r\n", tcpc_dev->vbus_level);
+#endif
 
 	rv = tcpc_typec_handle_ps_change(tcpc_dev, tcpc_dev->vbus_level);
 	if (rv < 0)
@@ -475,6 +487,40 @@ static inline int tcpci_set_wake_lock_pd(
 	return 0;
 }
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static inline uint8_t change_cc_value(uint8_t cc)
+{
+	uint8_t switch_cc	= DUAL_ROLE_PROP_CC_OPEN;
+
+	if ((cc >= 5) && (cc <= 7))		switch_cc	= cc - 4;
+	else if (cc == 1)	switch_cc	= DUAL_ROLE_PROP_CC_RA;
+	else if (cc == 2)	switch_cc	= DUAL_ROLE_PROP_CC_RD;
+
+	return switch_cc;
+}
+
+static inline uint8_t read_typec_cc_orientation(uint8_t cc1, uint8_t cc2)
+{
+	uint8_t type_cc = DUAL_ROLE_PROP_TYPEC_TYPEC_ATTACHED_NONE;
+
+	/* if CC1 = Rp or Rd */
+	if ((cc1 >= DUAL_ROLE_PROP_CC_RP_DEFAULT) && (cc1 <= DUAL_ROLE_PROP_CC_RD)) {
+		if (cc2 == DUAL_ROLE_PROP_CC_OPEN)
+			type_cc = DUAL_ROLE_PROP_TYPEC_TYPEC_ATTACHED_CC1;
+		else
+			type_cc = DUAL_ROLE_PROP_TYPEC_TYPEC_ATTACHED_CC1;
+	/* if CC2 = Rp or Rd */
+	} else if ((cc2 >= DUAL_ROLE_PROP_CC_RP_DEFAULT) && (cc2 <= DUAL_ROLE_PROP_CC_RD)) {
+		if (cc1 == DUAL_ROLE_PROP_CC_OPEN)
+			type_cc = DUAL_ROLE_PROP_TYPEC_TYPEC_ATTACHED_CC2;
+		else
+			type_cc = DUAL_ROLE_PROP_TYPEC_TYPEC_ATTACHED_CC2;
+	}
+
+	return type_cc;
+}
+#endif
+
 static inline int tcpci_report_usb_port_attached(struct tcpc_device *tcpc)
 {
 	TCPC_INFO("usb_port_attached\r\n");
@@ -484,16 +530,27 @@ static inline int tcpci_report_usb_port_attached(struct tcpc_device *tcpc)
 	case TYPEC_ATTACHED_SNK:
 	case TYPEC_ATTACHED_CUSTOM_SRC:
 	case TYPEC_ATTACHED_NORP_SRC:
+	case TYPEC_ATTACHED_DEBUG:
 		tcpc->dual_role_pr = DUAL_ROLE_PROP_PR_SNK;
 		tcpc->dual_role_dr = DUAL_ROLE_PROP_DR_DEVICE;
 		tcpc->dual_role_mode = DUAL_ROLE_PROP_MODE_UFP;
 		tcpc->dual_role_vconn = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
+#ifdef CONFIG_LGE_USB_TYPE_C
+		tcpc->dual_role_cc1 = change_cc_value(tcpc->typec_remote_cc[0]);
+		tcpc->dual_role_cc2 = change_cc_value(tcpc->typec_remote_cc[1]);
+		tcpc->dual_role_cc_orientation = read_typec_cc_orientation(tcpc->dual_role_cc1, tcpc->dual_role_cc2);
+#endif
 		break;
 	case TYPEC_ATTACHED_SRC:
 		tcpc->dual_role_pr = DUAL_ROLE_PROP_PR_SRC;
 		tcpc->dual_role_dr = DUAL_ROLE_PROP_DR_HOST;
 		tcpc->dual_role_mode = DUAL_ROLE_PROP_MODE_DFP;
 		tcpc->dual_role_vconn = DUAL_ROLE_PROP_VCONN_SUPPLY_YES;
+#ifdef CONFIG_LGE_USB_TYPE_C
+		tcpc->dual_role_cc1 = change_cc_value(tcpc->typec_remote_cc[0]);
+		tcpc->dual_role_cc2 = change_cc_value(tcpc->typec_remote_cc[1]);
+		tcpc->dual_role_cc_orientation = read_typec_cc_orientation(tcpc->dual_role_cc1, tcpc->dual_role_cc2);
+#endif
 		break;
 	default:
 		break;
@@ -527,6 +584,11 @@ static inline int tcpci_report_usb_port_detached(struct tcpc_device *tcpc)
 	tcpc->dual_role_dr = DUAL_ROLE_PROP_DR_NONE;
 	tcpc->dual_role_mode = DUAL_ROLE_PROP_MODE_NONE;
 	tcpc->dual_role_vconn = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
+#ifdef CONFIG_LGE_USB_TYPE_C
+	tcpc->dual_role_cc1 = change_cc_value(tcpc->typec_remote_cc[0]);
+	tcpc->dual_role_cc2 = change_cc_value(tcpc->typec_remote_cc[1]);
+	tcpc->dual_role_cc_orientation = DUAL_ROLE_PROP_TYPEC_TYPEC_ATTACHED_NONE;
+#endif
 	dual_role_instance_changed(tcpc->dr_usb);
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 

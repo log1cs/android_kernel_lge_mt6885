@@ -124,6 +124,10 @@ static const u8 mt6360_vend_alert_maskall[MT6360_VEND_INT_MAX] = {
 	0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+static int mt6360_is_vsafe0v(struct tcpc_device *tcpc);
+#endif
+
 #ifdef CONFIG_RT_REGMAP
 RT_REG_DECL(TCPC_V10_REG_VID, 2, RT_VOLATILE, {});
 RT_REG_DECL(TCPC_V10_REG_PID, 2, RT_VOLATILE, {});
@@ -1312,6 +1316,9 @@ static int mt6360_set_cc(struct tcpc_device *tcpc, int pull)
 			return ret;
 
 #ifdef CONFIG_TCPC_VSAFE0V_DETECT_IC
+#if defined(CONFIG_USBIF_COMPLIANCE)
+		if (mt6360_is_vsafe0v(tcpc))
+#endif
 		mt6360_enable_vsafe0v_detect(tcpc, false);
 #endif /* CONFIG_TCPC_VSAFE0V_DETECT_IC */
 
@@ -1410,10 +1417,20 @@ static int mt6360_set_vconn(struct tcpc_device *tcpc, int en)
 			MT6360_INFO("%s Vconn fault\n", __func__);
 			return -EINVAL;
 		}
+#ifdef CONFIG_LGE_USB_TYPE_C
+		mt6360_i2c_clr_bit(tcpc, MT6360_REG_VCONN_CTRL3,
+					MT6360_VCONN_VDDH_ENB);
+		gpio_set_value(tcpc->desc.vconn_gpio, 1);
+#endif
 	}
 	ret = (en ? mt6360_i2c_set_bit : mt6360_i2c_clr_bit)
 		(tcpc, TCPC_V10_REG_POWER_CTRL, TCPC_V10_REG_POWER_CTRL_VCONN);
 	if (!en) {
+#ifdef CONFIG_LGE_USB_TYPE_C
+		mt6360_i2c_set_bit(tcpc, MT6360_REG_VCONN_CTRL3,
+					MT6360_VCONN_VDDH_ENB);
+		gpio_set_value(tcpc->desc.vconn_gpio, 0);
+#endif
 		mt6360_i2c_clr_bit(tcpc, MT6360_REG_VCONN_CTRL2,
 				   MT6360_VCONN_OVP_CC_EN);
 		mt6360_i2c_clr_bit(tcpc, MT6360_REG_VCONN_CTRL3,
@@ -1499,6 +1516,10 @@ static int mt6360_vsafe0v_irq_handler(struct tcpc_device *tcpc)
 	if (ret < 0)
 		return ret;
 	tcpc->vbus_safe0v = ret ? true : false;
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	if (tcpc->vbus_safe0v && mt6360_is_low_power_mode(tcpc))
+		ret = mt6360_enable_vsafe0v_detect(tcpc, false);
+#endif
 	return 0;
 }
 #endif /* CONFIG_TCPC_VSAFE0V_DETECT_IC */
@@ -2369,7 +2390,6 @@ static int mt6360_tcpcdev_init(struct mt6360_chip *chip, struct device *dev)
 	struct device_node *np = dev->of_node;
 	u32 val, len;
 	const char *name = "default";
-	int err;
 
 	desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
 	if (!desc)
@@ -2419,11 +2439,19 @@ static int mt6360_tcpcdev_init(struct mt6360_chip *chip, struct device *dev)
 		dev_info(dev, "%s use default VconnSupply\n", __func__);
 		desc->vconn_supply = TCPC_VCONN_SUPPLY_ALWAYS;
 	}
+#ifdef CONFIG_LGE_USB_TYPE_C
+	desc->vconn_gpio = of_get_named_gpio(np, "mt-tcpc,vconn_gpio", 0);
+	pr_err("%s: vconn_gpio [%d]\n", __func__, desc->vconn_gpio);
+	if (gpio_is_valid(desc->vconn_gpio)) {
+		gpio_direction_output(desc->vconn_gpio, 0);
+		pr_info("%s: vconn_gpio set LOW\n", __func__);
+	} else {
+		pr_err("%s: vconn_gpio is invalid\n", __func__);
+	}
+#endif
 #endif	/* CONFIG_TCPC_VCONN_SUPPLY_MODE */
 
-	err = of_property_read_string(np, "mt-tcpc,name", (char const **)&name);
-	if (err < 0)
-		dev_info(dev, "%s no tcpc name\n", __func__);
+	of_property_read_string(np, "mt-tcpc,name", (char const **)&name);
 	len = strlen(name);
 	desc->name = kzalloc(len + 1, GFP_KERNEL);
 	if (!desc->name)

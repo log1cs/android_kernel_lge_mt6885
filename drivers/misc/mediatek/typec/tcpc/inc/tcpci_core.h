@@ -88,6 +88,9 @@ struct tcpc_desc {
 	uint8_t role_def;
 	uint8_t rp_lvl;
 	uint8_t vconn_supply;
+#ifdef CONFIG_LGE_USB_TYPE_C
+	int vconn_gpio;
+#endif
 	int notifier_supply_num;
 	char *name;
 #ifdef CONFIG_WATER_DETECTION
@@ -104,6 +107,9 @@ struct tcpc_desc {
 #endif /* CONFIG_WATER_DETECTION */
 };
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+extern struct tcpc_device	*g_tcpc;
+#endif
 /*---------------------------------------------------------------------------*/
 
 #ifdef CONFIG_TYPEC_NOTIFY_ATTACHWAIT_SNK
@@ -426,6 +432,11 @@ struct tcpc_device {
 	uint8_t dual_role_pr;
 	uint8_t dual_role_dr;
 	uint8_t dual_role_vconn;
+#ifdef CONFIG_LGE_USB_TYPE_C
+	uint8_t dual_role_cc1;
+	uint8_t dual_role_cc2;
+	uint8_t dual_role_cc_orientation;
+#endif
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
 #ifdef CONFIG_USB_POWER_DELIVERY
@@ -511,6 +522,9 @@ struct tcpc_device {
 	enum tcpc_cable_type typec_cable_type;
 	enum tcpc_cable_type pre_typec_cable_type;
 #endif /* CONFIG_CABLE_TYPE_DETECTION */
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+	int is_mositure_detected;
+#endif
 };
 
 
