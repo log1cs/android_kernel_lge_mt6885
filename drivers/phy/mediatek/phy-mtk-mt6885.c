@@ -33,6 +33,10 @@
 #include <mt-plat/mtk_usb2jtag.h>
 #endif
 
+#ifdef CONFIG_LGE_USB
+#include <soc/mediatek/lge/lge_boot_mode.h>
+#endif
+
 #define MTK_USB_PHY_BASE		(phy_drv->phy_base)
 #define MTK_USB_PHY_PORT_BASE	(instance->port_base)
 #define MTK_USB_PHY_MISC_BASE   (instance->sif_misc)
@@ -127,7 +131,11 @@ static void phy_efuse_settings(struct mtk_phy_instance *instance)
 			evalue);
 		u3phywrite32(U3D_USBPHYACR1,
 			RG_USB20_INTR_CAL_OFST,
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 			RG_USB20_INTR_CAL, evalue);
+#else
+			RG_USB20_INTR_CAL, 0x13);
+#endif
 	}
 	evalue = (get_devinfo_with_index(107) & (0x3f << 16)) >> 16;
 	if (evalue) {
@@ -160,7 +168,11 @@ static void phy_efuse_settings(struct mtk_phy_instance *instance)
 			evalue);
 		u3phywrite32(U3D_PHYD_IMPCAL0,
 			RG_SSUSB_TX_IMPSEL_OFST,
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 			RG_SSUSB_TX_IMPSEL, evalue);
+#else
+			RG_SSUSB_TX_IMPSEL, 0xC);
+#endif
 	}
 }
 
@@ -296,6 +308,28 @@ static int phy_init_soc(struct mtk_phy_instance *instance)
 	u3phywrite32(U3D_U2PHYDTM1, FORCE_SESSEND_OFST,
 		FORCE_SESSEND, 1);
 
+#ifdef CONFIG_LGE_USB
+	/* USB20 */
+	/* Apply Tuning value DC level 7+7 emphasis 3 */
+	u3phywrite32(U3D_USBPHYACR1, RG_USB20_VRT_VREF_SEL_OFST,
+		RG_USB20_VRT_VREF_SEL, 7);
+	u3phywrite32(U3D_USBPHYACR1, RG_USB20_TERM_VREF_SEL_OFST,
+		RG_USB20_TERM_VREF_SEL, 7);
+	u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST,
+		RG_USB20_PHY_REV_6, 3);
+
+	/* USB30 */
+	u3phywrite32(U3D_PHYD_MIX6, RG_SSUSB_IDRVSEL_OFST,
+		RG_SSUSB_IDRVSEL, 0x19);
+	u3phywrite32(U3D_PHYD_MIX6, RG_SSUSB_FORCE_IDRVSEL_OFST,
+		RG_SSUSB_FORCE_IDRVSEL, 1);
+
+	u3phywrite32(U3D_PHYD_MIX6, RG_SSUSB_IDEMSEL_OFST,
+		RG_SSUSB_IDEMSEL, 0x1a);
+	u3phywrite32(U3D_PHYD_MIX6, RG_SSUSB_FORCE_IDEMSEL_OFST,
+		RG_SSUSB_FORCE_IDEMSEL, 1);
+#endif
+
 #ifdef CONFIG_MTK_UART_USB_SWITCH
 reg_done:
 #endif
@@ -392,6 +426,99 @@ reg_done:
 
 #define VAL_MAX_WIDTH_2	0x3
 #define VAL_MAX_WIDTH_3	0x7
+#ifdef CONFIG_LGE_USB
+#define VAL_MAX_WIDTH_5	0x1F
+static void usb_phy_tuning(struct mtk_phy_instance *instance)
+{
+	s32 u2_vrt_ref, u2_term_ref, u2_enhance;
+	s32 ss_idrvsel, ss_idemsel;
+	struct device_node *of_node;
+
+	if (!instance->phy_tuning.inited) {
+		of_node = of_find_compatible_node(NULL, NULL,
+			instance->phycfg->tuning_node_name);
+		if (of_node) {
+			/* value won't be updated if property not being found */
+			if(of_property_read_u32(of_node, "u2_vrt_ref",
+				(u32 *) &instance->phy_tuning.u2_vrt_ref))
+				instance->phy_tuning.u2_vrt_ref = -1;
+
+			if(of_property_read_u32(of_node, "u2_term_ref",
+				(u32 *) &instance->phy_tuning.u2_term_ref))
+				instance->phy_tuning.u2_term_ref = -1;
+
+			if(of_property_read_u32(of_node, "u2_enhance",
+				(u32 *) &instance->phy_tuning.u2_enhance))
+				instance->phy_tuning.u2_enhance = -1;
+
+			if(of_property_read_u32(of_node, "ss_idrvsel",
+				(u32 *) &instance->phy_tuning.ss_idrvsel))
+				instance->phy_tuning.ss_idrvsel = -1;
+
+			if(of_property_read_u32(of_node, "ss_idemsel",
+				(u32 *) &instance->phy_tuning.ss_idemsel))
+				instance->phy_tuning.ss_idemsel = -1;
+
+		} else {
+			instance->phy_tuning.u2_vrt_ref = -1;
+			instance->phy_tuning.u2_term_ref = -1;
+			instance->phy_tuning.u2_enhance = -1;
+			instance->phy_tuning.ss_idrvsel = -1;
+			instance->phy_tuning.ss_idemsel = -1;
+		}
+		instance->phy_tuning.inited = true;
+	}
+	u2_vrt_ref = instance->phy_tuning.u2_vrt_ref;
+	u2_term_ref = instance->phy_tuning.u2_term_ref;
+	u2_enhance = instance->phy_tuning.u2_enhance;
+	ss_idrvsel = instance->phy_tuning.ss_idrvsel;
+	ss_idemsel = instance->phy_tuning.ss_idemsel;
+
+	if (u2_vrt_ref != -1) {
+		if (u2_vrt_ref <= VAL_MAX_WIDTH_3) {
+			u3phywrite32(U3D_USBPHYACR1,
+				RG_USB20_VRT_VREF_SEL_OFST,
+				RG_USB20_VRT_VREF_SEL, u2_vrt_ref);
+		}
+	}
+	if (u2_term_ref != -1) {
+		if (u2_term_ref <= VAL_MAX_WIDTH_3) {
+			u3phywrite32(U3D_USBPHYACR1,
+				RG_USB20_TERM_VREF_SEL_OFST,
+				RG_USB20_TERM_VREF_SEL, u2_term_ref);
+		}
+	}
+	if (u2_enhance != -1) {
+		if (u2_enhance <= VAL_MAX_WIDTH_2) {
+			u3phywrite32(U3D_USBPHYACR6,
+				RG_USB20_PHY_REV_6_OFST,
+				RG_USB20_PHY_REV_6, u2_enhance);
+		}
+	}
+
+	if (ss_idrvsel != -1) {
+		if (ss_idrvsel <= VAL_MAX_WIDTH_5) {
+			u3phywrite32(U3D_PHYD_MIX6,
+				RG_SSUSB_IDRVSEL_OFST,
+				RG_SSUSB_IDRVSEL, ss_idrvsel);
+			u3phywrite32(U3D_PHYD_MIX6,
+				RG_SSUSB_FORCE_IDRVSEL_OFST,
+				RG_SSUSB_FORCE_IDRVSEL, 1);
+		}
+	}
+
+	if (ss_idemsel != -1) {
+		if (ss_idemsel <= VAL_MAX_WIDTH_5) {
+			u3phywrite32(U3D_PHYD_MIX6,
+				RG_SSUSB_IDEMSEL_OFST,
+				RG_SSUSB_IDEMSEL, ss_idemsel);
+			u3phywrite32(U3D_PHYD_MIX6,
+				RG_SSUSB_FORCE_IDEMSEL_OFST,
+				RG_SSUSB_FORCE_IDEMSEL, 1);
+		}
+	}
+}
+#else
 static void usb_phy_tuning(struct mtk_phy_instance *instance)
 {
 	s32 u2_vrt_ref, u2_term_ref, u2_enhance;
@@ -451,7 +578,7 @@ static void usb_phy_tuning(struct mtk_phy_instance *instance)
 	u3phywrite32(U3D_PHYD_MIX6, RG_SSUSB_FORCE_IDEMSEL_OFST,
 		RG_SSUSB_FORCE_IDEMSEL, 1);
 }
-
+#endif
 
 static void phy_recover(struct mtk_phy_instance *instance)
 {
@@ -579,6 +706,21 @@ static void phy_charger_switch_bc11(struct mtk_phy_instance *instance,
 		charger_detect_release(instance);
 }
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+static void phy_if(struct mtk_phy_instance *instance)
+{
+	/* struct mtk_phy_drv *phy_drv = instance->phy_drv; */
+
+	//phy_printk(K_INFO, "%s+\n", __func__);
+	pr_info("[MTKPHY]s+\n", __func__);
+	u3phywrite32(U3D_USBPHYACR6,
+					RG_USB20_PHY_REV_6_OFST,
+					RG_USB20_PHY_REV_6, 0);
+	//phy_printk(K_INFO, "%s-\n", __func__);
+	pr_info("[MTKPHY]s-\n", __func__);
+}
+#endif
+
 static void phy_dpdm_pulldown(struct mtk_phy_instance *instance,
 					bool enable)
 {
@@ -632,6 +774,47 @@ static int phy_lpm_enable(struct mtk_phy_instance  *instance, bool on)
 static int phy_host_mode(struct mtk_phy_instance  *instance, bool on)
 {
 	phy_printk(K_DEBUG, "%s+ = %d\n", __func__, on);
+
+#ifdef CONFIG_LGE_USB
+	if (on) {
+	#ifdef CONFIG_LGE_BOOT_MODE
+		if (lge_get_factory_boot()) {
+			/* Apply Tuning value DC level 6+6 emphasis 3 */
+			u3phywrite32(U3D_USBPHYACR1, RG_USB20_VRT_VREF_SEL_OFST,
+				RG_USB20_VRT_VREF_SEL, 6);
+			u3phywrite32(U3D_USBPHYACR1, RG_USB20_TERM_VREF_SEL_OFST,
+				RG_USB20_TERM_VREF_SEL, 6);
+			u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST,
+				RG_USB20_PHY_REV_6, 3);
+		} else {
+			/* Apply Tuning value DC level 4+4 emphasis 3 */
+			u3phywrite32(U3D_USBPHYACR1, RG_USB20_VRT_VREF_SEL_OFST,
+				RG_USB20_VRT_VREF_SEL, 4);
+			u3phywrite32(U3D_USBPHYACR1, RG_USB20_TERM_VREF_SEL_OFST,
+				RG_USB20_TERM_VREF_SEL, 4);
+			u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST,
+				RG_USB20_PHY_REV_6, 3);
+		}
+	#else
+		/* Apply Tuning value DC level 4+4 emphasis 3 */
+		u3phywrite32(U3D_USBPHYACR1, RG_USB20_VRT_VREF_SEL_OFST,
+			RG_USB20_VRT_VREF_SEL, 4);
+		u3phywrite32(U3D_USBPHYACR1, RG_USB20_TERM_VREF_SEL_OFST,
+			RG_USB20_TERM_VREF_SEL, 4);
+		u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST,
+			RG_USB20_PHY_REV_6, 3);
+	#endif
+	} else {
+		/* Temp block usb20 phy tuning */
+		/* Apply Tuning value DC level 7+7 emphasis 3 */
+		u3phywrite32(U3D_USBPHYACR1, RG_USB20_VRT_VREF_SEL_OFST,
+			RG_USB20_VRT_VREF_SEL, 7);
+		u3phywrite32(U3D_USBPHYACR1, RG_USB20_TERM_VREF_SEL_OFST,
+			RG_USB20_TERM_VREF_SEL, 7);
+		u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST,
+			RG_USB20_PHY_REV_6, 3);
+	}
+#endif
 
 	return 0;
 }
@@ -1101,6 +1284,9 @@ static const struct mtk_phy_interface ssusb_phys[] = {
 	.usb_phy_recover  = phy_recover,
 	.usb_phy_switch_to_bc11 = phy_charger_switch_bc11,
 	.usb_phy_dpdm_pulldown = phy_dpdm_pulldown,
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	.usb_phy_if = phy_if,
+#endif
 	.usb_phy_lpm_enable = phy_lpm_enable,
 	.usb_phy_host_mode = phy_host_mode,
 	.usb_phy_io_read = phy_ioread,

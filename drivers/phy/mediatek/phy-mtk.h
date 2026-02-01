@@ -21,6 +21,8 @@ struct mtk_phy_tuning {
 	s32 u2_vrt_ref;
 	s32 u2_term_ref;
 	s32 u2_enhance;
+	s32 ss_idrvsel;
+	s32 ss_idemsel;
 	bool inited;
 };
 
@@ -54,6 +56,9 @@ struct mtk_phy_interface {
 		bool on);
 	void (*usb_phy_dpdm_pulldown)(struct mtk_phy_instance *instance,
 		bool enable);
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	void (*usb_phy_if)(struct mtk_phy_instance *instance);
+#endif
 	int  (*usb_phy_lpm_enable)(struct mtk_phy_instance *instance, bool on);
 	int  (*usb_phy_host_mode)(struct mtk_phy_instance *instance, bool on);
 	int  (*usb_phy_io_read)(struct mtk_phy_instance *instance, u32 reg);
