@@ -53,16 +53,6 @@ int topo_ctrl_get_nr_clusters(void)
 }
 EXPORT_SYMBOL(topo_ctrl_get_nr_clusters);
 
-int topo_ctrl_get_cluster_cpu_id(int id)
-{
-	if (id < 0 || id >= NR_PPM_CLUSTERS)
-		return -1;
-
-	return topo_cluster_info[id].cpu_id;
-}
-EXPORT_SYMBOL(topo_ctrl_get_cluster_cpu_id);
-
-
 /***************************************/
 static void topo_platform_init(void)
 {
@@ -118,7 +108,7 @@ static void calc_min_cpucap(void)
 				&cpus, cpu_possible_mask);
 
 		calc_cpu_num[i] = cpumask_weight(&cpu_online_cpumask);
-#if 0
+#if 1
 		calc_cpu_cap[i] = arch_get_max_cpu_capacity(cpu_num);
 #else
 		calc_cpu_cap[i] = 0;

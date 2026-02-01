@@ -21,8 +21,11 @@
 #include "mdee_dumper_v5.h"
 #include "ccci_config.h"
 #include "ccci_fsm_sys.h"
-#include "ccci_fsm.h"
-#include "modem_sys.h"
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 
 #ifndef DB_OPT_DEFAULT
 #define DB_OPT_DEFAULT    (0)	/* Dummy macro define to avoid build error */
@@ -139,6 +142,11 @@ static char mdee_more_inf_str[MD_EE_CASE_WDT + 1][64] = {
 	"\n[Others] MD watchdog timeout interrupt\n"
 };
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+static char assert_category[32];
+static char assert_keyword[32];
+#endif
+
 static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 	struct debug_info_t *debug_info, char *ex_info)
 {
@@ -150,6 +158,12 @@ static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 
 	switch (debug_info->type) {
 	case MD_EX_CLASS_ASSET:
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		memset(assert_category, 0x0, sizeof(assert_category));
+		memset(assert_keyword, 0x0, sizeof(assert_keyword));
+		mdee_get_assert_category(debug_info->dump_assert.file_name,
+			assert_category, assert_keyword);
+#endif
 		/* assert: file name+line number+code*3 */
 		ret = snprintf(ex_info, EE_BUF_LEN_UMOLY,
 			"(%s)\n[%s] file:%s line:%d\np1:0x%08x\np2:0x%08x\np3:0x%08x\n\n",
@@ -168,6 +182,11 @@ static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 			debug_info->dump_assert.parameters[0],
 			debug_info->dump_assert.parameters[1],
 			debug_info->dump_assert.parameters[2]);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		CCCI_ERROR_LOG(md_id, FSM,
+			"category = %s, keyword = %s\n",
+			assert_category, assert_keyword);
+#endif
 		break;
 	case MD_EX_CLASS_FATAL:
 		/* fatal:  */
@@ -368,6 +387,27 @@ err_exit:
 	kfree(ex_info_temp);
 	kfree(i_bit_ex_info);
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	if (debug_info && debug_info->type == MD_EX_CLASS_ASSET) {
+		if (!strcmp(assert_category, "RF"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_RF);
+		else if (!strcmp(assert_category, "AUDIO"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_AUDIO);
+		else if (!strcmp(assert_category, "GPS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_GPS);
+		else if (!strcmp(assert_category, "PS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_PS);
+		else
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_BSP);
+		lge_set_modem_info(debug_info->ex_type);
+	} else if (debug_info && debug_info->type == MD_EX_CLASS_FATAL) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_FATAL);
+		lge_set_modem_info(debug_info->ex_type);
+	} else if (debug_info && debug_info->type != MD_EX_CLASS_INVALID) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_UNKNOWN_CRASH);
+		lge_set_modem_info(debug_info->ex_type);
+	}
+#endif
 }
 
 static void strmncopy(char *src, char *dst, int src_len, int dst_len)
@@ -885,18 +925,7 @@ static void mdee_dumper_v5_emimpu_callback(
 {
 	int i, s;
 	int c = 0;
-	int md_state;
 	struct ccci_fsm_ctl *ctl = fsm_get_entity_by_md_id(0);
-	struct ccci_modem *md = ccci_md_get_modem_by_id(0);
-
-	if (md) {
-		md_state = ccci_fsm_get_md_state(md->index);
-		if (md_state != INVALID && md_state != GATED &&
-			md_state != WAITING_TO_STOP) {
-			if (md->ops->dump_info)
-				md->ops->dump_info(md, DUMP_FLAG_REG, NULL, 0);
-		}
-	}
 
 	if (!dump) {
 		CCCI_ERROR_LOG(0, FSM,

@@ -28,6 +28,9 @@ extern int usb_mtkphy_sib_enable_switch(struct phy *phy, bool enable);
 extern int usb_mtkphy_sib_enable_switch_status(struct phy *phy);
 extern int usb_mtkphy_switch_to_bc11(struct phy *phy, bool on);
 extern int usb_mtkphy_dpdm_pulldown(struct phy *phy, bool enable);
+#if defined(CONFIG_USBIF_COMPLIANCE)
+extern int usb_mtkphy_if(struct phy *phy);
+#endif
 extern int usb_mtkphy_lpm_enable(struct phy *phy, bool on);
 extern int usb_mtkphy_host_mode(struct phy *phy, bool on);
 extern int usb_mtkphy_io_read(struct phy *phy, u32 reg);

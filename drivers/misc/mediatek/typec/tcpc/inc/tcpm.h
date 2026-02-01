@@ -837,6 +837,10 @@ enum dpm_charging_policy {
 
 #ifdef CONFIG_TCPC_CLASS
 
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+extern void tcpm_notify_moisture_detection(struct tcpc_device *tcpc, bool moisture_detected);
+#endif
+
 extern struct tcpc_device
 		*tcpc_dev_get_by_name(const char *name);
 

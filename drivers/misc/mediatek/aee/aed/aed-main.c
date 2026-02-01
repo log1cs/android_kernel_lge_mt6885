@@ -45,6 +45,10 @@
 #include "aed.h"
 #include <linux/highmem.h>
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 struct aee_req_queue {
 	struct list_head list;
 	spinlock_t lock;
@@ -1102,6 +1106,13 @@ static ssize_t aed_ee_write(struct file *filp, const char __user *buf,
 		switch (msg.cmdId) {
 		case AE_IND_LOG_CLOSE:
 			complete(&aed_ee_com);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+			if (strncmp(eerec->assert_type, "scp", 3) == 0) {
+				/* SCP dump finished */
+				pr_err("[LGE] SCP dump finished.\n");
+				lge_set_scp_dump_status(1);
+			}
+#endif
 			break;
 		default:
 			/* IGNORE */
@@ -1705,14 +1716,15 @@ static long aed_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				user_ret = task_pt_regs(task);
 				memcpy(&(tmp->regs), user_ret,
 						sizeof(struct pt_regs));
-				rcu_read_unlock();
 				if (copy_to_user
 				    ((struct aee_thread_reg __user *)arg, tmp,
 				     sizeof(struct aee_thread_reg))) {
 					kfree(tmp);
+					rcu_read_unlock();
 					ret = -EFAULT;
 					goto EXIT;
 				}
+				rcu_read_unlock();
 
 			} else {
 				pr_info(

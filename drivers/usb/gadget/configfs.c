@@ -12,15 +12,31 @@
 #include "bootprof.h"
 #endif
 
+#ifdef CONFIG_MTK_USB2JTAG_SUPPORT
+#include <mt-plat/mtk_usb2jtag.h>
+#endif
+
+#ifdef CONFIG_LGE_USB_GADGET
+#include "u_lgeusb.h"
+#endif
+
+#ifdef CONFIG_LGE_PM_USB_ID //[LG]
+#include <linux/power/lge_usb_id.h>
+#endif //CONFIG_LGE_PM_USB_ID //[LG]
+
+#ifdef CONFIG_MTPROF
+#include "bootprof.h"
+#endif
+
+#ifdef CONFIG_MTK_USB2JTAG_SUPPORT
+#include <mt-plat/mtk_usb2jtag.h>
+#endif
+
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
 #include <linux/platform_device.h>
 #include <linux/kdev_t.h>
 #include <linux/usb/ch9.h>
 #include "mtk_gadget.h"
-
-#ifdef CONFIG_MTK_USB2JTAG_SUPPORT
-#include <mt-plat/mtk_usb2jtag.h>
-#endif
 
 #ifdef CONFIG_USB_CONFIGFS_F_ACC
 extern int acc_ctrlrequest(struct usb_composite_dev *cdev,
@@ -196,7 +212,21 @@ static ssize_t gadget_dev_desc_##__name##_show(struct config_item *item, \
 		le16_to_cpup(&to_gadget_info(item)->cdev.desc.__name)); \
 }
 
-
+#ifdef CONFIG_LGE_USB_GADGET
+#define GI_DEVICE_DESC_SIMPLE_W_u8(_name)		\
+static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
+		const char *page, size_t len)		\
+{							\
+	u8 val;						\
+	int ret;					\
+	ret = kstrtou8(page, 0, &val);			\
+	if (ret)					\
+		return ret;				\
+	to_gadget_info(item)->cdev.desc._name = val;	\
+	pr_info("%s: 0x%02X\n", __func__, val);		\
+	return len;					\
+}
+#else
 #define GI_DEVICE_DESC_SIMPLE_W_u8(_name)		\
 static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 		const char *page, size_t len)		\
@@ -209,7 +239,23 @@ static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 	to_gadget_info(item)->cdev.desc._name = val;	\
 	return len;					\
 }
+#endif
 
+#ifdef CONFIG_LGE_USB_GADGET
+#define GI_DEVICE_DESC_SIMPLE_W_u16(_name)	\
+static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
+		const char *page, size_t len)		\
+{							\
+	u16 val;					\
+	int ret;					\
+	ret = kstrtou16(page, 0, &val);			\
+	if (ret)					\
+		return ret;				\
+	to_gadget_info(item)->cdev.desc._name = cpu_to_le16p(&val);	\
+	pr_info("%s: 0x%04X\n", __func__, val); 	\
+	return len;					\
+}
+#else
 #define GI_DEVICE_DESC_SIMPLE_W_u16(_name)	\
 static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 		const char *page, size_t len)		\
@@ -222,6 +268,7 @@ static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 	to_gadget_info(item)->cdev.desc._name = cpu_to_le16p(&val);	\
 	return len;					\
 }
+#endif
 
 #define GI_DEVICE_DESC_SIMPLE_RW(_name, _type)	\
 	GI_DEVICE_DESC_SIMPLE_R_##_type(_name)	\
@@ -320,7 +367,9 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	struct gadget_info *gi = to_gadget_info(item);
 	char *name;
 	int ret;
-
+#ifdef CONFIG_LGE_USB_GADGET
+	struct usb_composite_dev *cdev	= &gi->cdev;
+#endif
 	if (strlen(page) < len)
 		return -EOVERFLOW;
 
@@ -352,6 +401,15 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		}
 	}
 	mutex_unlock(&gi->lock);
+#ifdef CONFIG_LGE_USB_GADGET
+	if(gi->composite.gadget_driver.udc_name == NULL) {
+		pr_info("%s [none]\n", __func__);
+	} else {
+		pr_info("%s [%s] VID(0x%04X), PID(0x%04X)\n", __func__,
+				strlen(name) ? name : "none",
+				cdev->desc.idVendor, cdev->desc.idProduct);
+	}
+#endif
 #ifdef CONFIG_MTPROF
 	{
 		static int first_shot = 1;
@@ -485,6 +543,9 @@ static int config_usb_cfg_link(
 	/* stash the function until we bind it to the gadget */
 	list_add_tail(&f->list, &cfg->func_list);
 	ret = 0;
+#ifdef CONFIG_LGE_USB_GADGET
+	pr_info("%s [%d:%s]\n", __func__, cfg->c.bConfigurationValue, f->name);
+#endif
 out:
 	mutex_unlock(&gi->lock);
 	return ret;
@@ -1393,6 +1454,11 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 		gi->cdev.desc.iManufacturer = s[USB_GADGET_MANUFACTURER_IDX].id;
 		gi->cdev.desc.iProduct = s[USB_GADGET_PRODUCT_IDX].id;
 		gi->cdev.desc.iSerialNumber = s[USB_GADGET_SERIAL_IDX].id;
+#ifdef CONFIG_LGE_USB_FACTORY
+		if (cdev->desc.idVendor == cpu_to_le16(LGE_USB_VID) &&
+				cdev->desc.idProduct == cpu_to_le16(LGE_USB_FACTORY_PID))
+			cdev->desc.iSerialNumber = 0;
+#endif
 		if (strlen(s[USB_GADGET_SERIAL_IDX].s) == 0)
 			gi->cdev.desc.iSerialNumber = 0;
 
@@ -1446,6 +1512,11 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 				goto err_comp_cleanup;
 			}
 			c->iConfiguration = s[0].id;
+#ifdef CONFIG_LGE_USB_FACTORY
+			if (cdev->desc.idVendor == cpu_to_le16(LGE_USB_VID) &&
+					cdev->desc.idProduct == cpu_to_le16(LGE_USB_FACTORY_PID))
+				c->iConfiguration = 0;
+#endif
 		}
 
 		list_for_each_entry_safe(f, tmp, &cfg->func_list, list) {
@@ -1473,6 +1544,52 @@ err_comp_cleanup:
 	composite_dev_cleanup(cdev);
 	return ret;
 }
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+#include <linux/usb/otg.h>
+
+const char *event_string(enum usb_otg_event event)
+{
+	switch (event) {
+	case OTG_EVENT_DEV_CONN_TMOUT:
+		return "DEV_CONN_TMOUT";
+	case OTG_EVENT_NO_RESP_FOR_HNP_ENABLE:
+		return "NO_RESP_FOR_HNP_ENABLE";
+	case OTG_EVENT_HUB_NOT_SUPPORTED:
+		return "HUB_NOT_SUPPORTED";
+	case OTG_EVENT_DEV_NOT_SUPPORTED:
+		return "DEV_NOT_SUPPORTED";
+	case OTG_EVENT_HNP_FAILED:
+		return "HNP_FAILED";
+	case OTG_EVENT_NO_RESP_FOR_SRP:
+		return "NO_RESP_FOR_SRP";
+	case OTG_EVENT_DEV_OVER_CURRENT:
+		return "DEV_OVER_CURRENT";
+	case OTG_EVENT_MAX_HUB_TIER_EXCEED:
+		return "MAX_HUB_TIER_EXCEED";
+	default:
+		return "UNDEFINED";
+	}
+}
+
+int send_otg_event(enum usb_otg_event event)
+{
+	char udev_event[128];
+	char *envp[] = {udev_event, NULL };
+	int ret;
+
+	snprintf(udev_event, 128, "USBIF_EVENT=%s", event_string(event));
+	pr_info("%s, - sending %s event - %s in %s\n", __func__, event_string(event),
+		"USBIF_EVENT", kobject_get_path(&android_device->kobj, GFP_KERNEL));
+
+	ret = kobject_uevent_env(&android_device->kobj, KOBJ_CHANGE, envp);
+	if (ret < 0)
+		pr_info("uevent sending failed with ret = %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(send_otg_event);
+#endif
 
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
 static void android_work(struct work_struct *data)
@@ -1512,6 +1629,11 @@ static void android_work(struct work_struct *data)
 					KOBJ_CHANGE, configured);
 		pr_info("%s: sent uevent %s\n", __func__, configured[0]);
 		uevent_sent = true;
+#ifdef CONFIG_LGE_PM_USB_ID //[LG]
+		lge_usb_id_set_usb_configured(1);
+		pr_info("%s: lge_usb_id_set_usb_configured\n", __func__);
+#endif //CONFIG_LGE_PM_USB_ID //[LG]
+
 #ifdef CONFIG_MTPROF
 		if (status[1]) {
 			static int first_shot = 1;

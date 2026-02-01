@@ -85,6 +85,10 @@ do {								\
 #define CHR_PE50_READY	(0x000E)
 #define CHR_PE50_RUNNING	(0x000F)
 #define CHR_PE50	(0x0010)
+#ifdef CONFIG_LGE_PM
+#define CHR_DISABLE	(0x0100)	/* battery charging disable */
+#define CHR_SUSPEND	(0x0101)	/* input currnet disable */
+#endif
 
 /* charging abnormal status */
 #define CHG_VBUS_OV_STATUS	(1 << 0)
@@ -115,6 +119,12 @@ enum {
 	CHARGER_DEV_NOTIFY_IBUSUCP_FALL,
 	CHARGER_DEV_NOTIFY_VOUTOVP,
 	CHARGER_DEV_NOTIFY_VDROVP,
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	CHARGER_DEV_NOTIFY_MODE_CHANGE,
+#endif
+#ifdef CONFIG_LGE_PM
+	CHARGER_DEV_NOTIFY_MIVR,
+#endif
 };
 
 /*
@@ -158,6 +168,24 @@ struct battery_thermal_protection_data {
 	int max_charge_temp_minus_x_degree;
 };
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+struct wless_profile {
+	int input_current;
+	int charging_current;
+	int vbus;
+	int mivr;
+};
+
+struct wless_region_data {
+	/* condition */
+	int trigger;
+	int clear;
+	/* restriction */
+	int bpp_power;
+	int epp_power;
+};
+#endif
+
 struct charger_custom_data {
 	int battery_cv;	/* uv */
 	int max_charger_voltage;
@@ -174,8 +202,14 @@ struct charger_custom_data {
 	int charging_host_charger_current;
 	int apple_1_0a_charger_current;
 	int apple_2_1a_charger_current;
-	int usb_unlimited_current;
 	int ta_ac_charger_current;
+#ifdef CONFIG_LGE_PM
+	int ta_ac_charger_input_current;
+	int typec_rp3p0_input_current;
+	int typec_rp3p0_current;
+	int typec_rp1p5_input_current;
+	int typec_rp1p5_current;
+#endif
 	int pd_charger_current;
 
 	/* dynamic mivr */
@@ -251,6 +285,25 @@ struct charger_custom_data {
 	int chg2_eff;
 	bool parallel_vbus;
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	struct wless_profile wless_bpp;
+	struct wless_profile wless_epp;
+	int wless_margin_power;
+	int wless_fastchg_power;
+	int wless_overheat_temp;
+	int wless_base_input_current;
+	int wless_base_charging_current;
+
+	struct wless_profile *wless_bpp_profile;
+	int wless_bpp_num_profile;
+	struct wless_profile *wless_epp_profile;
+	int wless_epp_num_profile;
+	struct wless_region_data *wless_t_region;
+	int wless_num_t_region;
+	struct wless_region_data *wless_c_region;
+	int wless_num_c_region;
+#endif
+
 	/* cable measurement impedance */
 	int cable_imp_threshold;
 	int vbat_cable_imp_threshold;
@@ -289,6 +342,34 @@ struct charger_data {
 	int junction_temp_max;
 };
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+enum wless_type {
+	WLESS_TYPE_UNKNOWN,
+	WLESS_TYPE_BPP,
+	WLESS_TYPE_EPP,
+};
+
+enum wless_state {
+	WLESS_STATE_OFF,
+	WLESS_STATE_CALI,
+	WLESS_STATE_STABLE,
+};
+
+struct wless {
+	struct charger_device *dev;
+	struct notifier_block nb;
+	enum wless_type type;
+	int tx_power;
+	enum wless_state state;
+	int t_region;
+	int c_region;
+	bool ept_status;
+	int power;
+	struct wless_profile *profile;
+	int vbus;
+};
+#endif
+
 struct charger_manager {
 	bool init_done;
 	const char *algorithm_name;
@@ -297,6 +378,9 @@ struct charger_manager {
 	int usb_state;
 	bool usb_unlimited;
 	bool disable_charger;
+#ifdef CONFIG_LGE_PM
+	bool lge_charging;
+#endif
 
 	struct charger_device *chg1_dev;
 	struct notifier_block chg1_nb;
@@ -317,6 +401,9 @@ struct charger_manager {
 
 	struct adapter_device *pd_adapter;
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	struct wless wless;
+#endif
 
 	enum charger_type chr_type;
 	bool can_charging;
@@ -336,6 +423,10 @@ struct charger_manager {
 
 	/* common info */
 	int battery_temp;
+#ifdef CONFIG_LGE_PM
+	int battery_volt;
+	int battery_soc;
+#endif
 
 	/* sw jeita */
 	bool enable_sw_jeita;
@@ -423,6 +514,10 @@ struct charger_manager {
 	/* dynamic mivr */
 	bool enable_dynamic_mivr;
 
+#ifdef CONFIG_LGE_PM
+	bool enable_usb_compliance;
+	bool enable_test_mode;
+#endif
 	struct smartcharging sc;
 
 
@@ -431,9 +526,6 @@ struct charger_manager {
 	u_int g_scd_pid;
 	struct scd_cmd_param_t_1 sc_data;
 
-	bool force_disable_pp[TOTAL_CHARGER];
-	bool enable_pp[TOTAL_CHARGER];
-	struct mutex pp_lock[TOTAL_CHARGER];
 };
 
 /* charger related module interface */

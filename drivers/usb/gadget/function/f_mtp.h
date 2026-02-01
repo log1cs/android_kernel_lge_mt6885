@@ -56,6 +56,10 @@ struct mtp_event {
  */
 #define MTP_SEND_FILE_WITH_HEADER  _IOW('M', 4, struct mtp_file_range)
 
+#ifdef CONFIG_LGE_USB
+#define MTP_RECEIVE_CANCEL_EVENT  _IOW('M', 5, struct mtp_event)
+#endif
+
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
@@ -71,5 +75,7 @@ struct __compat_mtp_event {
 #endif
 
 #define COMPAT_MTP_SEND_EVENT   _IOW('M', 3, struct __compat_mtp_event)
-
+#ifdef CONFIG_LGE_USB
+#define COMPAT_MTP_RECEIVE_CANCEL_EVENT   _IOW('M', 5, struct __compat_mtp_event)
+#endif
 

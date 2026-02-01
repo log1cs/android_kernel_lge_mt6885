@@ -52,12 +52,42 @@
 #include "ca/tlcDpHdcp.h"
 #endif
 
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+#include <soc/mediatek/lge/board_lge.h>
+#include <soc/mediatek/lge/lge_boot_mode.h>
+#endif
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+//#include <linux/lge_ds3.h>
+#include <linux/extcon.h>
+static const unsigned int dd_extcon_cable[] = {
+	EXTCON_DISP_DP,
+	EXTCON_DISP_DS1,
+	EXTCON_DISP_DS2,
+	EXTCON_NONE,
+};
+#include "../lge/cover/lge_cover_ctrl.h"
+#include "../lge/cover/lge_cover_ctrl_ops.h"
+#include <asm/atomic.h>
+#include <linux/hall_ic.h>
+struct hallic_dev dd_lt_dev = {
+	.name = "dd_lt_status",
+	.state = 0,
+};
+
+void call_disconnect_uevent(void);
+extern void dd_set_force_disconnection(bool val);
+extern bool dd_get_force_disconnection(void);
+extern int is_dd_connected(void);
+extern bool is_ds_connected(void);
+#endif
+
 static struct mtk_dp *g_mtk_dp;
 static bool fakecablein;
 static int fakeres = FAKE_DEFAULT_RES;
 static int fakebpc = DP_COLOR_DEPTH_8BIT;
 struct mutex dp_lock;
 static bool g_hdcp_on = 1;
+static BYTE g_c0 = 24, g_cp1 = 4;
 
 static const struct drm_display_mode dptx_est_modes[] = {
 	/* 2160x3840@60Hz */
@@ -428,6 +458,17 @@ void mdrv_DPTx_InitVariable(struct mtk_dp *mtk_dp)
 
 	if (!mtk_dp->training_info.set_max_linkrate)
 		mdrv_DPTx_CheckMaxLinkRate(mtk_dp);
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+	if (!mtk_dp->dd_lt) {
+		if (hallic_register(&dd_lt_dev) < 0 ) {
+			pr_err("dd_lt_dev registration failed\n");
+		} else {
+			pr_info("dd_lt_dev registration success\n");
+		}
+		mtk_dp->dd_lt = &dd_lt_dev;
+	}
+#endif
+
 }
 
 void mdrv_DPTx_SetSDP_DownCntinit(struct mtk_dp *mtk_dp,
@@ -1461,6 +1502,9 @@ int mdrv_DPTx_HPD_HandleInThread(struct mtk_dp *mtk_dp)
 			mdrv_DPTx_AudioMute(mtk_dp, true);
 
 			if (mtk_dp->bUeventToHwc) {
+#ifdef CONFIG_LGE_DUAL_SCREEN
+				if (!is_ds_connected())
+#endif
 				mtk_dp_hotplug_uevent(0);
 				mtk_dp->bUeventToHwc = false;
 				mtk_dp->disp_status = DPTX_DISP_NONE;
@@ -1846,6 +1890,10 @@ int mdrv_DPTx_TrainingFlow(struct mtk_dp *mtk_dp, u8 ubLaneRate, u8 ubLaneCount)
 		mhal_DPTx_SetEF_Mode(mtk_dp, ENABLE_DPTX_EF_MODE);
 
 		DPTXMSG("Link Training PASS\n");
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+		if (is_ds_connected())
+			hallic_set_state(mtk_dp->dd_lt, 1);
+#endif
 		return DPTX_NOERR;
 	}
 
@@ -1878,8 +1926,11 @@ bool mdrv_DPTx_CheckSinkCap(struct mtk_dp *mtk_dp)
 
 	memcpy(mtk_dp->rx_cap, bTempBuffer, 0x10);
 	mtk_dp->rx_cap[0xe] &= 0x7F;
-
+#if defined (CONFIG_LGE_DUAL_SCREEN)
+	if (mtk_dp->training_info.ubDPCD_REV >= 0x14 && !is_ds_connected()) {
+#else
 	if (mtk_dp->training_info.ubDPCD_REV >= 0x14) {
+#endif
 		mdrv_DPTx_FEC_Ready(mtk_dp, FEC_BIT_ERROR_COUNT);
 		mdrv_DPTx_DSC_Support(mtk_dp);
 	}
@@ -2062,6 +2113,14 @@ int mdrv_DPTx_SetTrainingStart(struct mtk_dp *mtk_dp)
 	ubLinkRate = mtk_dp->training_info.ubLinkRate;
 	ubLaneCount = mtk_dp->training_info.ubLinkLaneCount;
 
+#if defined (CONFIG_LGE_DUAL_SCREEN)
+	if (is_ds_connected()) {
+		ubLinkRate = DP_LINKRATE_HBR;
+		if (g_c0 | g_cp1)
+			mhal_DPTx_AdjustPHYSetting(mtk_dp, g_c0, g_cp1);
+	}
+#endif
+
 	switch (ubLinkRate) {
 	case DP_LINKRATE_RBR:
 	case DP_LINKRATE_HBR:
@@ -2211,6 +2270,9 @@ int mdrv_DPTx_Training_Handler(struct mtk_dp *mtk_dp)
 		if (ret == DPTX_NOERR) {
 			mdrv_DPTx_VideoMute(mtk_dp, true);
 			mdrv_DPTx_AudioMute(mtk_dp, true);
+			/* ALPS06066707 ALPS06001613 To fix ds abnormal operation and specific apple dongle doesn't work well.*/
+			mhal_DPTx_VideoMuteSW(mtk_dp, true);
+
 			mtk_dp->training_state = DPTX_NTSTATE_CHECKTIMING;
 			mtk_dp->dp_ready = true;
 			mhal_DPTx_EnableFEC(mtk_dp, mtk_dp->has_fec);
@@ -2231,9 +2293,16 @@ int mdrv_DPTx_Training_Handler(struct mtk_dp *mtk_dp)
 		if (mtk_dp->bUeventToHwc) {
 			mtk_dp_hotplug_uevent(1);
 			mtk_dp->bUeventToHwc = false;
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+			atomic_set(&mtk_dp->lge_dp.dd_uevent_switch, 1);
+#endif
 		} else
 			DPTXMSG("Skip Uevent(1)\n");
-
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+		if (is_ds_connected() && mtk_dp->info.bAuthStatus == AUTH_ZERO) {
+			mdrv_DPTx_CheckHDCPVersion(mtk_dp, true);
+		}
+#endif
 		break;
 	case DPTX_NTSTATE_NORMAL:
 		break;
@@ -2259,6 +2328,12 @@ void mdrv_DPTx_reAuthentication(struct mtk_dp *mtk_dp)
 
 void mdrv_DPTx_CheckHDCPVersion(struct mtk_dp *mtk_dp, bool only_hdcp1x)
 {
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+	if (lge_get_factory_boot()) {
+		pr_info("HDCP skip with factory boot\n");
+		return;
+	}
+#endif
 	if (g_hdcp_on) {
 		if (!only_hdcp1x && mdrv_DPTx_HDCP2_Support(mtk_dp))
 			return;
@@ -2280,7 +2355,12 @@ static void mdrv_DPTx_hdcp_handle(struct work_struct *data)
 		return;
 
 	if (mtk_dp->info.bAuthStatus == AUTH_ZERO) {
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+		if (!is_ds_connected())
+			mdrv_DPTx_CheckHDCPVersion(mtk_dp, false);
+#else
 		mdrv_DPTx_CheckHDCPVersion(mtk_dp, false);
+#endif
 		if (mtk_dp->info.hdcp2_info.bEnable)
 			mdrv_DPTx_HDCP2_SetStartAuth(mtk_dp, true);
 		else if (mtk_dp->info.hdcp1x_info.bEnable)
@@ -2345,6 +2425,9 @@ int mdrv_DPTx_Handle(struct mtk_dp *mtk_dp)
 	case DPTXSTATE_INITIAL:
 		mdrv_DPTx_VideoMute(mtk_dp, true);
 		mdrv_DPTx_AudioMute(mtk_dp, true);
+		/* ALPS06066707 ALPS06001613 To fix ds abnormal operation and specific apple dongle doesn't work well.*/
+		mhal_DPTx_VideoMuteSW(mtk_dp, true);
+
 		mtk_dp->state = DPTXSTATE_IDLE;
 		break;
 
@@ -2405,12 +2488,11 @@ void mdrv_DPTx_HPD_HandleInISR(struct mtk_dp *mtk_dp)
 			mtk_dp->training_info.usPHY_STS &= ~HPD_DISCONNECT;
 	}
 
-#if 0
 	if (mtk_dp->training_info.bCablePlugIn)
 		mtk_dp->training_info.usPHY_STS &= ~HPD_CONNECT;
 	else
 		mtk_dp->training_info.usPHY_STS &= ~HPD_DISCONNECT;
-#endif
+
 
 	if (mtk_dp->training_info.usPHY_STS & HPD_CONNECT) {
 		mtk_dp->training_info.usPHY_STS &= ~HPD_CONNECT;
@@ -2435,9 +2517,7 @@ void mdrv_DPTx_USBC_HPD_Event(u16 ubSWStatus)
 	struct mtk_dp *mtk_dp = g_mtk_dp;
 
 	mtk_dp->training_info.usPHY_STS |= ubSWStatus;
-	DPTXMSG("SW status = 0x%x, usPHY_STS = 0x%x\n",
-		ubSWStatus,
-		mtk_dp->training_info.usPHY_STS);
+	DPTXMSG("SW status = 0x%x\n", ubSWStatus);
 
 	mdrv_DPTx_HPD_HandleInISR(mtk_dp);
 
@@ -2484,6 +2564,9 @@ void mdrv_DPTx_InitPort(struct mtk_dp *mtk_dp)
 
 	mhal_DPTx_DigitalSwReset(mtk_dp);
 	mhal_DPTx_Set_Efuse_Value(mtk_dp);
+#if defined (CONFIG_LGE_DUAL_SCREEN)
+	mtk_dp->dd_lt->state = 0;
+#endif
 }
 
 void mdrv_DPTx_Video_Enable(struct mtk_dp *mtk_dp, bool bEnable)
@@ -2492,10 +2575,19 @@ void mdrv_DPTx_Video_Enable(struct mtk_dp *mtk_dp, bool bEnable)
 
 	if (bEnable) {
 		mdrv_DPTx_SetDPTXOut(mtk_dp);
+		/* ALPS06066707 ALPS06001613 To fix ds abnormal operation and specific apple dongle doesn't work well.*/
 		mdrv_DPTx_VideoMute(mtk_dp, false);
+		mdrv_DPTx_AudioMute(mtk_dp, false);
+		mhal_DPTx_VideoMuteSW(mtk_dp, false);
+
 		mhal_DPTx_Verify_Clock(mtk_dp);
-	} else
+	} else {
+		/* ALPS06066707 ALPS06001613 To fix ds abnormal operation and specific apple dongle doesn't work well.*/
 		mdrv_DPTx_VideoMute(mtk_dp, true);
+		mdrv_DPTx_AudioMute(mtk_dp, true);
+		mhal_DPTx_VideoMuteSW(mtk_dp, true);
+	}
+
 }
 
 void mdrv_DPTx_Set_Color_Format(struct mtk_dp *mtk_dp, u8 ucColorFormat)
@@ -2879,7 +2971,7 @@ void mtk_dp_video_config(struct mtk_dp *mtk_dp)
 		DPTX_TBL->Htt = 1172; DPTX_TBL->Hbp = 30; DPTX_TBL->Hsw = 32;
 		DPTX_TBL->bHsp = 1; DPTX_TBL->Hfp = 30; DPTX_TBL->Hde = 1080;
 		DPTX_TBL->Vtt = 2476; DPTX_TBL->Vbp = 5; DPTX_TBL->Vsw = 2;
-		DPTX_TBL->bVsp = 0; DPTX_TBL->Vfp = 9; DPTX_TBL->Vde = 2460;
+		DPTX_TBL->bVsp = 1; DPTX_TBL->Vfp = 9; DPTX_TBL->Vde = 2460;
 		break;
 	case SINK_1280_1024:
 		DPTX_TBL->FrameRate = 60;
@@ -3348,7 +3440,7 @@ struct drm_display_limit_mode {
 static struct drm_display_limit_mode dp_plat_limit[] = {
 	{3840, 2160, 60, 594000, 1},
 	{3840, 2160, 30, 297000, 1},
-	{1080, 2460, 60, 174110, 1},
+	{1080, 2460, 60, 174112, 1},
 	{1920, 1200, 60, 152128, 1},
 	{1920, 1080, 60, 148500, 1},
 	{1280, 720,  60,  74250, 1},
@@ -3380,7 +3472,7 @@ static enum drm_mode_status mtk_dp_conn_mode_valid(struct drm_connector *conn,
 
 	if (mode->hdisplay == 3840 && mode->vdisplay == 2160 &&
 		mode->vrefresh == 60 && mtk_dp->has_dsc)
-		bandwidth = bandwidth * 594 * 10 / 2025;
+		bandwidth = bandwidth * 594 / 202.5;
 
 	if (fakecablein == true)
 		bandwidth = dp_plat_limit[0].clock;
@@ -3706,8 +3798,14 @@ void mtk_dp_SWInterruptSet(int bstatus)
 		|| (bstatus == HPD_CONNECT && !g_mtk_dp->bPowerOn))
 		g_mtk_dp->bUeventToHwc = true;
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+	if (!g_mtk_dp->bPowerOn && bstatus == HPD_DISCONNECT
+		&& g_mtk_dp->disp_status == DPTX_DISP_SUSPEND
+		&& !is_ds_connected()) {
+#else
 	if (!g_mtk_dp->bPowerOn && bstatus == HPD_DISCONNECT
 		&& g_mtk_dp->disp_status == DPTX_DISP_SUSPEND) {
+#endif
 		DPTXMSG("System is sleeping, Plug Out\n");
 		mtk_dp_hotplug_uevent(0);
 		g_mtk_dp->disp_status = DPTX_DISP_NONE;
@@ -3827,7 +3925,9 @@ static int mtk_drm_dp_probe(struct platform_device *pdev)
 	int ret, irq_num = 0;
 	int comp_id;
 	struct mtk_drm_private *mtk_priv = dev_get_drvdata(dev);
-
+#if defined (CONFIG_LGE_DUAL_SCREEN)
+	int id = 0;
+#endif
 	DPTXFUNC();
 	mtk_dp = devm_kmalloc(dev, sizeof(*mtk_dp), GFP_KERNEL | __GFP_ZERO);
 	if (!mtk_dp)
@@ -3901,7 +4001,11 @@ static int mtk_drm_dp_probe(struct platform_device *pdev)
 	mutex_init(&dp_lock);
 
 	platform_set_drvdata(pdev, mtk_dp);
-
+#if defined (CONFIG_LGE_DUAL_SCREEN)
+	for (id = 0; id < EXT_DD_MAX_COUNT; id++) {
+		ret = lge_cover_extcon_register(pdev, &mtk_dp->lge_dp, id);
+	}
+#endif
 	mtk_dp->control_task = kthread_run(mtk_dp_control_kthread,
 		(void *)mtk_dp, "mtk_dp_video_trigger");
 
@@ -3925,6 +4029,82 @@ static int mtk_drm_dp_remove(struct platform_device *pdev)
 
 	return 0;
 }
+
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+bool is_dp_connected()
+{
+	struct mtk_dp *mtk_dp = NULL;
+
+	mtk_dp = g_mtk_dp;
+
+	return mtk_dp->bPowerOn;
+}
+EXPORT_SYMBOL(is_dp_connected);
+
+int is_dd_connected()
+{
+	struct mtk_dp *mtk_dp = NULL;
+	int ret = 0;
+
+	mtk_dp = g_mtk_dp;
+
+	if (IS_ERR_OR_NULL(mtk_dp)) {
+		pr_err("DD hpd is not initialized yet\n");
+		ret = 0;
+	} else {
+		ret = mtk_dp->lge_dp.ds_connected;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(is_dd_connected);
+
+struct extcon_dev *dd_extcon_get(int id)
+{
+	struct mtk_dp *mtk_dp = NULL;
+
+	mtk_dp = g_mtk_dp;
+
+	if (!mtk_dp)
+		return ERR_PTR(1);
+
+	return mtk_dp->lge_dp.dd_extcon_sdev[id];
+}
+EXPORT_SYMBOL(dd_extcon_get);
+
+void call_disconnect_uevent(void)
+{
+	struct mtk_dp *mtk_dp = NULL;
+
+	mtk_dp = g_mtk_dp;
+
+	pr_info("%s : DD call disconnect callback\n", __func__);
+	if (atomic_read(&mtk_dp->lge_dp.dd_uevent_switch)) {
+		mtk_dp_hotplug_uevent(0);
+		atomic_set(&mtk_dp->lge_dp.dd_uevent_switch, 0);
+	}
+	g_mtk_dp->disp_status = DPTX_DISP_NONE;
+}
+EXPORT_SYMBOL(call_disconnect_uevent);
+
+bool is_dd_working(void)
+{
+	return is_dd_connected();
+}
+EXPORT_SYMBOL(is_dd_working);
+
+struct lge_dp_display *get_lge_dp(void)
+{
+	struct mtk_dp *mtk_dp = NULL;
+
+	mtk_dp = g_mtk_dp;
+
+	if (!mtk_dp)
+		return ERR_PTR(1);
+
+	return &mtk_dp->lge_dp;
+}
+EXPORT_SYMBOL(get_lge_dp);
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 static int mtk_dp_suspend(struct device *dev)

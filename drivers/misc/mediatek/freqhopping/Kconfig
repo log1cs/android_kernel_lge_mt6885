@@ -7,3 +7,9 @@ config MTK_FREQ_HOPPING
 	  say Y or M here.
 	  If unsure, say N.
 
+config MTK_MSDC_SSC_CONTROL
+    bool "eMMC, SDCARD SSC control on"
+	default N
+	help
+	  FREQHOPPING set for SSC control
+

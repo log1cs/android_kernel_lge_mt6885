@@ -566,14 +566,6 @@ struct ufs_stats {
 	struct ufs_err_reg_hist perf_warn;
 };
 
-/* UFSHCD states */
-enum {
-	UFSHCD_STATE_RESET,
-	UFSHCD_STATE_ERROR,
-	UFSHCD_STATE_OPERATIONAL,
-	UFSHCD_STATE_EH_SCHEDULED,
-};
-
 /* MTK PATCH UFS Host Controller debug print bitmask */
 #define UFSHCD_DBG_PRINT_CLK_FREQ_EN		UFS_BIT(0)
 #define UFSHCD_DBG_PRINT_UIC_ERR_HIST_EN	UFS_BIT(1)
@@ -697,6 +689,11 @@ struct ufs_hba {
 	enum ufs_pm_level spm_lvl;
 	struct device_attribute rpm_lvl_attr;
 	struct device_attribute spm_lvl_attr;
+
+#ifdef CONFIG_LFS_UFS_SYSFS_COMMON
+	struct device_attribute health_desc_attr;
+#endif
+
 	int pm_op_in_progress;
 
 	/* Auto-Hibernate Idle Timer register value */
@@ -760,12 +757,6 @@ struct ufs_hba {
 	#define UFSHCD_QUIRK_BROKEN_UFS_HCI_VERSION		UFS_BIT(5)
 
 	/*
-	 * This quirk needs to be enabled if we apply performance heuristic
-	 * to UFS host.
-	 */
-	#define UFSHCD_QUIRK_UFS_HCI_PERF_HEURISTIC		UFS_BIT(6)
-
-	/*
 	 * This quirk needs to be enabled if the host contoller regards
 	 * resolution of the values of PRDTO and PRDTL in UTRD as byte.
 	 */
@@ -792,16 +783,11 @@ struct ufs_hba {
 	 */
 	#define UFSHCD_QUIRK_UFS_HCI_DISABLE_AH8_BEFORE_RDB	UFS_BIT(10)
 
-	/*
+    /*
 	 * This quirk needs to be enabled if the host controller advertises
 	 * inline encryption support but it doesn't work correctly.
 	 */
 	#define UFSHCD_QUIRK_BROKEN_CRYPTO			UFS_BIT(11)
-
-	/*
-	 * This quirk needs to be enabled if VCC drop slow
-	 */
-	#define UFSHCD_QUIRK_UFS_VCC_ALWAYS_ON			UFS_BIT(12)
 
 	unsigned int quirks;	/* Deviations from standard UFSHCI spec. */
 
@@ -824,12 +810,14 @@ struct ufs_hba {
 	u16 hba_enable_delay_us;
 	bool is_powered;
 	bool is_init_prefetch;
+	/* MTK PATCH */
+	/* recover from init fail */
+	bool is_init_progress;
+	bool is_init_fail;
 	struct ufs_init_prefetch init_prefetch_data;
-	struct semaphore eh_sem;
 
 	/* Work Queues */
 	struct work_struct eh_work;
-	struct work_struct inv_resp_work;
 	struct work_struct eeh_work;
 	struct work_struct rls_work;
 
@@ -959,9 +947,6 @@ struct ufs_hba {
 	struct keyslot_manager *ksm;
 	void *crypto_DO_NOT_USE[8];
 #endif /* CONFIG_SCSI_UFS_CRYPTO */
-
-	u32 ufs_mtk_qcmd_r_cmd_cnt;
-	u32 ufs_mtk_qcmd_w_cmd_cnt;
 };
 
 /* MTK PATCH */
@@ -1180,6 +1165,16 @@ static inline int ufshcd_dme_peer_get(struct ufs_hba *hba,
 {
 	return ufshcd_dme_get_attr(hba, attr_sel, mib_val, DME_PEER);
 }
+
+#ifdef CONFIG_LFS_UFS
+int ufshcd_read_string_desc(struct ufs_hba *hba, int desc_index, u8 *buf, u32 size, bool ascii);
+int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_geo_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_config_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_unit_desc(struct ufs_hba *hba, int u_index, u8 *buf, u32 size);
+int ufshcd_read_inter_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_power_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+#endif
 
 /* MTK PATCH */
 extern struct ufs_pm_lvl_states ufs_pm_lvl_states[];

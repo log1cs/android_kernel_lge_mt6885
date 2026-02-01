@@ -23,6 +23,7 @@
 #include "ccci_bm.h"
 #include "port_sysmsg.h"
 #include "ccci_swtp.h"
+#include "fsm/ccci_fsm_internal.h"
 #define MAX_QUEUE_LENGTH 16
 
 struct md_rf_notify_struct {

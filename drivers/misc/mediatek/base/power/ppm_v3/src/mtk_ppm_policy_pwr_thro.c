@@ -16,6 +16,10 @@
 #include <linux/module.h>
 #include <linux/init.h>
 
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+#include <linux/power_supply.h>
+#endif
+
 #include "mach/upmu_sw.h"
 #include "mtk_ppm_internal.h"
 #include "mach/mtk_pmic.h"
@@ -170,6 +174,66 @@ end:
 }
 #endif
 
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+static struct notifier_block ppm_pwrthro_psy_nb;
+static struct work_struct ppm_pwrthro_no_battery_protect_work;
+static int no_battery = 0;
+
+static void ppm_pwrthro_no_battery_protect(struct work_struct *work)
+{
+	unsigned int limited_power = 0;
+
+	FUNC_ENTER(FUNC_LV_API);
+
+	ppm_ver("@%s: no bat lv = %d\n", __func__, no_battery);
+
+	ppm_lock(&pwrthro_policy.lock);
+
+	if (!pwrthro_policy.is_enabled) {
+		ppm_warn("@%s: pwrthro policy is not enabled!\n", __func__);
+		ppm_unlock(&pwrthro_policy.lock);
+		goto end;
+	}
+
+	if (no_battery)
+		limited_power = PWRTHRO_NO_BAT_MW;
+
+	pwrthro_policy.req.power_budget = limited_power;
+	pwrthro_policy.is_activated = (limited_power) ? true : false;
+	ppm_unlock(&pwrthro_policy.lock);
+	mt_ppm_main();
+
+end:
+	FUNC_EXIT(FUNC_LV_API);
+}
+
+static int ppm_pwrthro_psy_notifier_call(struct notifier_block *nb,
+					 unsigned long event, void *v)
+{
+	struct power_supply *psy = (struct power_supply *)v;
+	union power_supply_propval val;
+	int battery_not_exist;
+	int ret = 0;
+
+	if (psy->desc->type != POWER_SUPPLY_TYPE_BATTERY)
+		return NOTIFY_DONE;
+
+	ret = power_supply_get_property(psy,
+			POWER_SUPPLY_PROP_PRESENT, &val);
+	if (ret)
+		return NOTIFY_DONE;
+
+	battery_not_exist = val.intval ? 0 : 1;
+	if (battery_not_exist == no_battery)
+		return NOTIFY_DONE;
+
+	no_battery = battery_not_exist;
+	schedule_work(&ppm_pwrthro_no_battery_protect_work);
+
+	return NOTIFY_DONE;
+}
+#endif
+
 static int __init ppm_pwrthro_policy_init(void)
 {
 	int ret = 0;
@@ -181,6 +245,13 @@ static int __init ppm_pwrthro_policy_init(void)
 		ret = -EINVAL;
 		goto out;
 	}
+
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+	INIT_WORK(&ppm_pwrthro_no_battery_protect_work,
+			ppm_pwrthro_no_battery_protect);
+	ppm_pwrthro_psy_nb.notifier_call = ppm_pwrthro_psy_notifier_call;
+	power_supply_reg_notifier(&ppm_pwrthro_psy_nb);
+#endif
 
 #ifndef DISABLE_BATTERY_PERCENT_PROTECT
 	register_battery_percent_notify(&ppm_pwrthro_bat_per_protect,

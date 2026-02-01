@@ -99,17 +99,68 @@ static const int mt6360_current[MT6360_LEVEL_NUM] = {
 	1150, 1200
 };
 
-static const unsigned char mt6360_torch_level[MT6360_LEVEL_TORCH] = {
+/* torch level */
+//0x00 : 25mA
+//0x02 : 50mA
+//0x04 : 75mA
+//0x05 : 87.5mA
+//0x06 : 100mA
+//0x0A : 150mA
+//0x0E : 200mA
+//0x12 : 250mA
+//0x16 : 300mA
+//0x1A : 350mA
+//0x1E : 400mA
+
+#if defined(CONFIG_MACH_MT6885_CAYMAN)
+static const unsigned char mt6360_torch_level_CH1[MT6360_LEVEL_TORCH] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+	0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
+};
+
+static const unsigned char mt6360_torch_level_CH2[MT6360_LEVEL_TORCH] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+	0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
+};
+#else
+static const unsigned char mt6360_torch_level_CH1[MT6360_LEVEL_TORCH] = {
 	0x00, 0x02, 0x04, 0x06, 0x08, 0x0A, 0x0C, 0x0E, 0x10, 0x12,
 	0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E
 };
 
+static const unsigned char mt6360_torch_level_CH2[MT6360_LEVEL_TORCH] = {
+	0x00, 0x02, 0x04, 0x06, 0x08, 0x0A, 0x0C, 0x0E, 0x10, 0x12,
+	0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E
+};
+#endif
+
+/* Strobe Level*/
+//0x04 : 100mA
+//0x0C : 200mA
+//0x14 : 300mA
+//0x1C : 400mA
+//0x24 : 500mA
+//0x2C : 600mA
+//0x34 : 700mA
+//0x3C : 800mA
+//0x44 : 900mA
+//0x4C : 1000mA
+//0x54 : 1100mA
+//0x5C : 1200mA
+
 /* 0x00~0x74 6.25mA/step 0x75~0xB1 12.5mA/step */
 static const unsigned char mt6360_strobe_level[MT6360_LEVEL_FLASH] = {
+#if defined(CONFIG_MACH_MT6885_CAYMAN)
+	0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C,
+	0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x24, 0x2C, 0x34,
+	0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C,
+	0x3C, 0x3C
+#else
 	0x00, 0x04, 0x08, 0x0C, 0x10, 0x14, 0x18, 0x1C, 0x20, 0x24,
 	0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x44, 0x4C, 0x54, 0x5C,
 	0x64, 0x6C, 0x74, 0x78, 0x7C, 0x80, 0x84, 0x88, 0x8C, 0x90,
 	0x94, 0x98
+#endif
 };
 
 static int mt6360_decouple_mode;
@@ -173,6 +224,13 @@ static int mt6360_enable(void)
 	if ((mt6360_en_ch1 == MT6360_ENABLE_FLASH)
 			|| (mt6360_en_ch2 == MT6360_ENABLE_FLASH))
 		mode = FLASHLIGHT_MODE_FLASH;
+
+/* LGE_CHANGE_S, 2020-05-28, enabled dual flash path for Cayman, ssora.lee@lge.com */
+#if defined(CONFIG_MACH_MT6885_CAYMAN)
+	mt6360_en_ch2 = mt6360_en_ch1;
+#endif
+/* LGE_CHANGE_E, 2020-05-28, enabled dual flash path for Cayman, ssora.lee@lge.com */
+
 
 	pr_debug("enable(%d,%d), mode:%d.\n",
 		mt6360_en_ch1, mt6360_en_ch2, mode);
@@ -272,7 +330,14 @@ static int mt6360_disable(int channel)
 	int ret = 0;
 
 	if (channel == MT6360_CHANNEL_CH1)
+	{
 		ret = mt6360_disable_ch1();
+		/* LGE_CHANGE_S, 2020-05-28, enabled dual flash path for Cayman, ssora.lee@lge.com */
+		#if defined(CONFIG_MACH_MT6885_CAYMAN)
+		ret = mt6360_disable_ch2();
+		#endif
+		/* LGE_CHANGE_E, 2020-05-28, enabled dual flash path for Cayman, ssora.lee@lge.com */
+	}
 	else if (channel == MT6360_CHANNEL_CH2)
 		ret = mt6360_disable_ch2();
 	else if (channel == MT6360_CHANNEL_ALL)
@@ -296,12 +361,17 @@ static int mt6360_set_level_ch1(int level)
 		return -1;
 	}
 
+//[LGE_UPDATE_S] [kyunghun.oh@lge.com] [2018-10-12] Split the torch level array of CH1 and CH2
 	/* set brightness level */
-	if (!mt6360_is_torch(level))
+	if (!mt6360_is_torch(level)) {
+        printk("set CH1 torch level(IDX) = %d\n", level);
 		flashlight_set_torch_brightness(
-				flashlight_dev_ch1, mt6360_torch_level[level]);
+				flashlight_dev_ch1, mt6360_torch_level_CH1[level]);
+    }
+	printk("set CH1 strobe level(IDX) = %d\n", level);
 	flashlight_set_strobe_brightness(
 			flashlight_dev_ch1, mt6360_strobe_level[level]);
+//[LGE_UPDATE_E] [kyunghun.oh@lge.com] [2018-10-12] Split the torch level array of CH1 and CH2
 
 	return 0;
 }
@@ -316,12 +386,17 @@ static int mt6360_set_level_ch2(int level)
 		return -1;
 	}
 
+//[LGE_UPDATE_S] [kyunghun.oh@lge.com] [2018-10-12] Split the torch level array of CH1 and CH2
 	/* set brightness level */
-	if (!mt6360_is_torch(level))
+	if (!mt6360_is_torch(level)) {
+        printk("set CH2 torch level(IDX) = %d\n", level);
 		flashlight_set_torch_brightness(
-				flashlight_dev_ch2, mt6360_torch_level[level]);
+				flashlight_dev_ch2, mt6360_torch_level_CH2[level]);
+    }
+	printk("set CH2 strobe/torch level(IDX) = %d\n", level);
 	flashlight_set_strobe_brightness(
 			flashlight_dev_ch2, mt6360_strobe_level[level]);
+//[LGE_UPDATE_E] [kyunghun.oh@lge.com] [2018-10-12] Split the torch level array of CH1 and CH2
 
 	return 0;
 }
@@ -329,7 +404,14 @@ static int mt6360_set_level_ch2(int level)
 static int mt6360_set_level(int channel, int level)
 {
 	if (channel == MT6360_CHANNEL_CH1)
+	{
 		mt6360_set_level_ch1(level);
+		/* LGE_CHANGE_S, 2020-05-28, enabled dual flash path for Cayman, ssora.lee@lge.com */
+		#if !defined(CONFIG_MACH_MT6885_CAYMAN)
+		mt6360_set_level_ch2(level);
+		#endif
+		/* LGE_CHANGE_E, 2020-05-28, enabled dual flash path for Cayman, ssora.lee@lge.com */
+	}
 	else if (channel == MT6360_CHANNEL_CH2)
 		mt6360_set_level_ch2(level);
 	else {

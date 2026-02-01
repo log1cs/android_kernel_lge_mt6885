@@ -25,6 +25,23 @@
 #include <linux/usb/class-dual-role.h>
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static const char *const pd_connect_result_string[] = {
+	"PD_CONNECT_NONE" ,
+	"PD_CONNECT_TYPEC_ONLY_SNK_DFT" ,
+	"PD_CONNECT_TYPEC_ONLY_SNK" ,
+	"PD_CONNECT_TYPEC_ONLY_SRC" ,
+	"PD_CONNECT_PE_READY_SNK" ,
+	"PD_CONNECT_PE_READY_SRC" ,
+	"PD_CONNECT_PE_READY_SNK_PD30" ,
+	"PD_CONNECT_PE_READY_SRC_PD30" ,
+	"PD_CONNECT_PE_READY_SNK_APDO" ,
+	"PD_CONNECT_HARD_RESET" ,
+	"PD_CONNECT_PE_READY_DBGACC_UFP" ,
+	"PD_CONNECT_PE_READY_DBGACC_DFP" ,
+};
+#endif
+
 /* From DTS */
 
 #ifdef CONFIG_USB_PD_REV30_BAT_INFO
@@ -791,6 +808,10 @@ int pd_reset_protocol_layer(struct pd_port *pd_port, bool sop_only)
 		PE_RESET_MSG_ID(pd_port, TCPC_TX_SOP_PRIME_PRIME);
 	}
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+	pd_port->last_rdo = 0;
+#endif
+
 #ifdef CONFIG_USB_PD_IGNORE_PS_RDY_AFTER_PR_SWAP
 	pd_port->msg_id_pr_swap_last = 0xff;
 #endif	/* CONFIG_USB_PD_IGNORE_PS_RDY_AFTER_PR_SWAP */
@@ -1387,7 +1408,11 @@ int pd_update_connect_state(struct pd_port *pd_port, uint8_t state)
 		return 0;
 
 	pd_port->pd_connect_state = state;
+	#ifdef CONFIG_LGE_USB_TYPE_C
+	PE_INFO("pd_state=[%s]\r\n", pd_connect_result_string[state]);
+	#else
 	PE_INFO("pd_state=%d\r\n", state);
+	#endif
 	return tcpci_notify_pd_state(pd_port->tcpc_dev, state);
 }
 

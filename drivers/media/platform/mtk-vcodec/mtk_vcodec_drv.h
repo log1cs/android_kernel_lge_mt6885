@@ -162,8 +162,7 @@ enum mtk_dec_param {
 	MTK_DEC_PARAM_NAL_SIZE_LENGTH = (1 << 6),
 	MTK_DEC_PARAM_FIXED_MAX_OUTPUT_BUFFER = (1 << 7),
 	MTK_DEC_PARAM_SEC_DECODE = (1 << 8),
-	MTK_DEC_PARAM_OPERATING_RATE = (1 << 9),
-	MTK_DEC_PARAM_FORCE_RES_CHANGE = (1 << 10)
+	MTK_DEC_PARAM_OPERATING_RATE = (1 << 9)
 };
 
 enum venc_lock {
@@ -188,7 +187,6 @@ struct mtk_dec_params {
 	u64	timestamp;
 	unsigned int	total_frame_bufq_count;
 	unsigned int	queued_frame_buf_count;
-	unsigned int    force_res_change;
 };
 
 /**
@@ -470,6 +468,9 @@ struct mtk_vcodec_dev {
 	struct mtk_vcodec_ctx *curr_enc_ctx[MTK_VENC_HW_NUM];
 	void __iomem *dec_reg_base[NUM_MAX_VDEC_REG_BASE];
 	void __iomem *enc_reg_base[NUM_MAX_VENC_REG_BASE];
+
+	bool dec_is_power_on[MTK_VDEC_HW_NUM];
+	spinlock_t dec_power_lock[MTK_VDEC_HW_NUM];
 
 	unsigned long id_counter;
 

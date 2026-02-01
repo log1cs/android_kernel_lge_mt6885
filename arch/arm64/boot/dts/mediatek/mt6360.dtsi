@@ -53,22 +53,37 @@
 			cv = <4350000>;			/* uA */
 			ieoc = <150000>;		/* uA */
 			safety_timer = <12>;		/* hour */
+#ifdef CONFIG_LGE_PM
+			ircmp_resistor = <0>;		/* uohm */
+			ircmp_vclamp = <0>;		/* uV */
+#else /* MediaTek */
 			ircmp_resistor = <25000>;	/* uohm */
 			ircmp_vclamp = <32000>;		/* uV */
+#endif
 			en_te = <1>;
 			en_wdt = <1>;
 			aicc_once = <1>;
+#ifdef CONFIG_LGE_PM
+			post_aicc = <0>;
+#else /* MediaTek */
 			post_aicc = <1>;
+#endif
 			batoc_notify = <0>;
 		};
 		fled {
 			compatible = "mediatek,mt6360_pmu_fled";
 			interrupt-parent = <&mt6360_pmu>;
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+			interrupts = <74 0>, <75 0>, <78 0>, <79 0>;
+			interrupt-names = "fled_tx_evt", "fled_lvf_evt",
+					  "fled2_short_evt", "fled1_short_evt";
+#else /* MediaTek */
 			interrupts = <11 0>, <74 0>, <75 0>, <78 0>,
 				     <79 0>;
 			interrupt-names = "fled_chg_vinovp_evt", "fled_tx_evt",
 					  "fled_lvf_evt", "fled2_short_evt",
 					  "fled1_short_evt";
+#endif
 			/* 0: fixed mode, 1: tracking mode */
 			fled_vmid_track = <0>;
 			/* 64~2432ms, 32ms/step */

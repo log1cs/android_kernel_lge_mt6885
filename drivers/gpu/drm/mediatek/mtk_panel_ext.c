@@ -23,6 +23,10 @@
 
 #include "mtk_panel_ext.h"
 
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+#include "lge_dsi_panel.h"
+#endif
+
 struct _panel_rst_ctx {
 	struct drm_panel *panel;
 	panel_tch_rst rst_cb;
@@ -107,6 +111,9 @@ int mtk_panel_ext_create(struct device *dev,
 {
 	struct mtk_panel_ctx *ext_ctx;
 	struct mtk_panel_ext *ext;
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	struct lge_ddic_ops *ddic_ops;
+#endif
 
 	ext_ctx = devm_kzalloc(dev, sizeof(struct mtk_panel_ctx), GFP_KERNEL);
 	if (!ext_ctx)
@@ -116,11 +123,18 @@ int mtk_panel_ext_create(struct device *dev,
 	if (!ext)
 		return -ENOMEM;
 
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	ddic_ops = devm_kzalloc(dev, sizeof(struct lge_ddic_ops), GFP_KERNEL);
+	if (!ddic_ops)
+		return -ENOMEM;
+#endif
 	mtk_panel_init(ext_ctx);
 	ext->params = ext_params;
 	ext->funcs = ext_funcs;
 	ext_ctx->ext = ext;
-
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	ext->lge.ddic_ops = ddic_ops;
+#endif
 	mtk_panel_add(ext_ctx);
 	mtk_panel_attach(ext_ctx, panel);
 

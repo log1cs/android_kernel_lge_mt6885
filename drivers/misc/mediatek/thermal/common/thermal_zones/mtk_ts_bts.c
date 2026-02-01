@@ -505,15 +505,13 @@ static struct BTS_TEMPERATURE BTS_Temperature_Table7[] = {
 
 
 /* convert register to temperature  */
-static __s32 mtkts_bts_thermistor_conver_temp(__s32 Res)
+static __s16 mtkts_bts_thermistor_conver_temp(__s32 Res)
 {
 	int i = 0;
 	int asize = 0;
 	__s32 RES1 = 0, RES2 = 0;
 	__s32 TAP_Value = -200, TMP1 = 0, TMP2 = 0;
-#ifdef APPLY_PRECISE_BTS_TEMP
-	TAP_Value = TAP_Value * 1000;
-#endif
+
 	asize = (ntc_tbl_size / sizeof(struct BTS_TEMPERATURE));
 
 	/* mtkts_bts_dprintk("mtkts_bts_thermistor_conver_temp() :
@@ -521,14 +519,8 @@ static __s32 mtkts_bts_thermistor_conver_temp(__s32 Res)
 	 */
 	if (Res >= BTS_Temperature_Table[0].TemperatureR) {
 		TAP_Value = -40;	/* min */
-#ifdef APPLY_PRECISE_BTS_TEMP
-		TAP_Value = TAP_Value * 1000;
-#endif
 	} else if (Res <= BTS_Temperature_Table[asize - 1].TemperatureR) {
 		TAP_Value = 125;	/* max */
-#ifdef APPLY_PRECISE_BTS_TEMP
-		TAP_Value = TAP_Value * 1000;
-#endif
 	} else {
 		RES1 = BTS_Temperature_Table[0].TemperatureR;
 		TMP1 = BTS_Temperature_Table[0].BTS_Temp;
@@ -551,42 +543,35 @@ static __s32 mtkts_bts_thermistor_conver_temp(__s32 Res)
 			 * __LINE__,i,RES1,TMP1);
 			 */
 		}
-#ifdef APPLY_PRECISE_BTS_TEMP
-		TAP_Value = mult_frac((((Res - RES2) * TMP1) +
-			((RES1 - Res) * TMP2)), 1000, (RES1 - RES2));
-#else
+
 		TAP_Value = (((Res - RES2) * TMP1) + ((RES1 - Res) * TMP2))
 								/ (RES1 - RES2);
-#endif
 	}
 
-#if 0
-	mtkts_bts_dprintk(
-		"%s() : TAP_Value = %d\n", __func__,
+	mtkts_bts_printk("%s() : TAP_Value = %d\n", __func__,
 								TAP_Value);
 
-	mtkts_bts_dprintk("%s() : Res = %d\n", __func__,
+	mtkts_bts_printk("%s() : Res = %d\n", __func__,
 									Res);
 
-	mtkts_bts_dprintk("%s() : RES1 = %d\n", __func__
+	mtkts_bts_printk("%s() : RES1 = %d\n", __func__,
 									RES1);
 
-	mtkts_bts_dprintk("%s() : RES2 = %d\n", __func__,
+	mtkts_bts_printk("%s() : RES2 = %d\n", __func__,
 									RES2);
 
-	mtkts_bts_dprintk("%s() : TMP1 = %d\n", __func__,
+	mtkts_bts_printk("%s() : TMP1 = %d\n", __func__,
 									TMP1);
 
-	mtkts_bts_dprintk("%s() : TMP2 = %d\n", __func__,
+	mtkts_bts_printk("%s() : TMP2 = %d\n", __func__,
 									TMP2);
-#endif
 
 	return TAP_Value;
 }
 
 /* convert ADC_AP_temp_volt to register */
 /*Volt to Temp formula same with 6589*/
-static __s32 mtk_ts_bts_volt_to_temp(__u32 dwVolt)
+static __s16 mtk_ts_bts_volt_to_temp(__u32 dwVolt)
 {
 	__s32 TRes;
 	__u64 dwVCriAP = 0;
@@ -618,7 +603,6 @@ static __s32 mtk_ts_bts_volt_to_temp(__u32 dwVolt)
 
 	/* convert register to temperature */
 	BTS_TMP = mtkts_bts_thermistor_conver_temp(TRes);
-
 	return BTS_TMP;
 }
 
@@ -708,9 +692,9 @@ static int get_hw_bts_temp(void)
 #endif /*CONFIG_MEDIATEK_MT6577_AUXADC*/
 
 	/* ret = ret*1800/4096;//82's ADC power */
-	mtkts_bts_dprintk("APtery output mV = %d\n", ret);
+	mtkts_bts_printk("APtery output mV = %d\n", ret);
 	output = mtk_ts_bts_volt_to_temp(ret);
-	mtkts_bts_dprintk("BTS output temperature = %d\n", output);
+	mtkts_bts_printk("BTS output temperature = %d\n", output);
 	return output;
 }
 
@@ -726,9 +710,8 @@ int mtkts_bts_get_hw_temp(void)
 	/* get HW AP temp (TSAP) */
 	/* cat /sys/class/power_supply/AP/AP_temp */
 	t_ret = get_hw_bts_temp();
-#ifndef APPLY_PRECISE_BTS_TEMP
 	t_ret = t_ret * 1000;
-#endif
+
 	mutex_unlock(&BTS_lock);
 
 	if ((tsatm_thermal_get_catm_type() == 2) &&

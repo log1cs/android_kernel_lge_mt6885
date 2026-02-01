@@ -2,6 +2,24 @@
 #ifndef _GPIO_KEYS_H
 #define _GPIO_KEYS_H
 
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+enum dd_fw_update {
+	DD_MCU_CANCEL			= 0,
+	DD_MCU_FORCE_UPDATE	= 1,
+	DD_MCU_UPDATE			= 2,
+	DD_TOUCH_UPDATE		= 3,
+	DD_TOUCH_MCU_UPDATE	= 4,
+	DD_UPDATE_CLEAR		= 5,
+	DD_MCU_RECOVERY		= 6
+};
+
+enum coverfw_status {
+	UPDATE_NO_NEED		= 0,
+	UPDATE_NEED		= 1,
+	UPDATE_DONE		= 2,
+	RECOVERY_NEED		= 6,
+};
+#endif
 struct device;
 
 /**

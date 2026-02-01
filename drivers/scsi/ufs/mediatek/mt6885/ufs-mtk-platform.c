@@ -30,6 +30,12 @@
 #include <mt-plat/upmu_common.h>
 #endif
 
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+#include <linux/regulator/consumer.h>
+#include <mt-plat/mtk_thermal_monitor.h>
+#include <linux/kthread.h>
+#endif
+
 static void __iomem *ufs_mtk_mmio_base_gpio;
 static void __iomem *ufs_mtk_mmio_base_topckgen;
 static void __iomem *ufs_mtk_mmio_base_infracfg_ao;
@@ -283,7 +289,7 @@ int ufs_mtk_pltfrm_xo_ufs_req(struct ufs_hba *hba, bool on)
 
 	/* inform ATF clock is on */
 	if (on)
-		mt_secure_call(MTK_SIP_KERNEL_UFS_CTL, 4, 1, 0, 0);
+		mt_secure_call(MTK_SIP_KERNEL_UFS_CTL, 8, 1, 0, 0);
 
 	/*
 	 * Delay before disable ref-clk: H8 -> delay A -> disable ref-clk
@@ -366,7 +372,7 @@ int ufs_mtk_pltfrm_xo_ufs_req(struct ufs_hba *hba, bool on)
 
 	/* inform ATF clock is off */
 	if (!on)
-		mt_secure_call(MTK_SIP_KERNEL_UFS_CTL, 4, 0, 0, 0);
+		mt_secure_call(MTK_SIP_KERNEL_UFS_CTL, 8, 0, 0, 0);
 
 	return 0;
 }
@@ -573,12 +579,78 @@ int ufs_mtk_pltfrm_host_sw_rst(struct ufs_hba *hba, u32 target)
 	return 0;
 }
 
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+static void change_power_mode(int change_mode)
+{
+	int origin_mode;
+
+	origin_mode = regulator_get_mode(ufs_mtk_hba->vreg_info.vccq->reg); // 1 fast, 2 normal
+
+	if (origin_mode != change_mode) {
+		if (ufs_mtk_hba->vreg_info.vccq) {
+			dev_err(ufs_mtk_hba->dev, "[utm] change regulator power mode from %d to %d\n", origin_mode, change_mode);
+			regulator_set_mode(ufs_mtk_hba->vreg_info.vccq->reg, change_mode);
+		}
+	}
+}
+
+#define ufshcd_is_ufs_dev_active(h) \
+    ((h)->curr_dev_pwr_mode == UFS_ACTIVE_PWR_MODE)
+
+static int utm_thread_func(void *data)
+{
+	int mode = 0;
+	volatile int cur_temp = 0;
+
+repeat:
+	if (kthread_should_stop())
+		return 0;
+
+#ifdef CONFIG_LGE_PM_VTS
+	cur_temp = mtk_thermal_get_temp(LGE_THERMAL_SENSOR_QUIET);
+#endif
+
+	if (cur_temp == -127000) {
+		msleep(1000 * 10);
+		goto repeat;
+	}
+
+	if (ufshcd_is_ufs_dev_active(ufs_mtk_hba)) {
+		mode = regulator_get_mode(ufs_mtk_hba->vreg_info.vccq->reg); // 1 fast, 2 normal
+
+		if (mode == REGULATOR_MODE_FAST && cur_temp >= 12000) {
+			change_power_mode(REGULATOR_MODE_NORMAL);
+		}
+		else if (mode == REGULATOR_MODE_NORMAL && cur_temp < 10000) {
+			change_power_mode(REGULATOR_MODE_FAST);
+		}
+	}
+
+	msleep(1000 * 10);
+
+	goto repeat;
+}
+#endif
+
 int ufs_mtk_pltfrm_init(void)
 {
 	struct ufs_mtk_host *host = ufshcd_get_variant(ufs_mtk_hba);
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+	struct task_struct *utm_thread;
+	int err = 0;
+#endif
 
 	ufs_mtk_hba->caps |= UFSHCD_CAP_CLK_GATING;
 	host->vreg_lpm_supported = true;
+
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+	utm_thread = kthread_run(utm_thread_func, NULL, "utm_thread");
+
+	if (IS_ERR(utm_thread)) {
+		err = PTR_ERR(utm_thread);
+		return err;
+	}
+#endif
 
 	return 0;
 }
@@ -669,10 +741,32 @@ int ufs_mtk_pltfrm_parse_dt(struct ufs_hba *hba)
 	return err;
 }
 
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+int ufs_mtk_pltfrm_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
+#else
 int ufs_mtk_pltfrm_resume(struct ufs_hba *hba)
+#endif
 {
 	struct ufs_mtk_host *host = ufshcd_get_variant(hba);
 	int ret = 0;
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+	volatile int cur_temp = 0;
+	int mode = 0;
+
+	/* force VCCQ as PWM mode */
+	if (pm_op != UFS_RUNTIME_PM)
+		change_power_mode(REGULATOR_MODE_FAST);
+	else { //runtime pm
+#ifdef CONFIG_LGE_PM_VTS
+		cur_temp = mtk_thermal_get_temp(LGE_THERMAL_SENSOR_QUIET);
+#endif
+		mode = regulator_get_mode(ufs_mtk_hba->vreg_info.vccq->reg); // 1 fast, 2 normal
+
+		if (cur_temp == -127000 || (mode == REGULATOR_MODE_NORMAL && cur_temp < 10000)) {
+			change_power_mode(REGULATOR_MODE_FAST);
+		}
+	}
+#endif
 
 	/*
 	 * If the UFSHCD_CAP_CLK_GATING is not set,
@@ -690,7 +784,11 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+int ufs_mtk_pltfrm_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
+#else
 int ufs_mtk_pltfrm_suspend(struct ufs_hba *hba)
+#endif
 {
 	struct ufs_mtk_host *host = ufshcd_get_variant(hba);
 	int ret = 0;
@@ -707,6 +805,12 @@ int ufs_mtk_pltfrm_suspend(struct ufs_hba *hba)
 		if (ret)
 			goto out;
 	}
+
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+	/* switch VCCQ to AUTO mode */
+	change_power_mode(REGULATOR_MODE_NORMAL);
+#endif
+
 #if 0
 	/* TEST ONLY: emulate UFSHCI power off by HCI SW reset */
 	ufs_mtk_pltfrm_host_sw_rst(hba, SW_RST_TARGET_UFSHCI);

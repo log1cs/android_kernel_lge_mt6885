@@ -33,6 +33,10 @@ enum {
 	CHARGER_NOTIFY_STOP_CHARGING,
 	CHARGER_NOTIFY_ERROR,
 	CHARGER_NOTIFY_NORMAL,
+#ifdef CONFIG_LGE_PM
+	CHARGER_NOTIFY_DISABLE,
+	CHARGER_NOTIFY_SUSPEND,
+#endif
 };
 
 enum {
@@ -101,10 +105,6 @@ extern int charger_manager_enable_power_path(
 	struct charger_consumer *consumer,
 	int idx,
 	bool en);
-extern int charger_manager_force_disable_power_path(
-	struct charger_consumer *consumer,
-	int idx,
-	bool disable);
 extern int charger_manager_enable_charging(
 	struct charger_consumer *consumer,
 	int idx,
@@ -116,9 +116,17 @@ extern int charger_manager_get_zcv(
 extern int charger_manager_enable_chg_type_det(
 	struct charger_consumer *consumer,
 	bool en);
+#ifdef CONFIG_LGE_PM
+extern int charger_manager_retry_chg_type_det(
+	struct charger_consumer *consumer);
+#endif
 extern int mtk_chr_is_charger_exist(unsigned char *exist);
 extern bool is_power_path_supported(void);
 extern int charger_get_vbus(void);
 extern bool mt_charger_plugin(void);
+
+#ifdef CONFIG_LGE_PM
+extern int chgctrl_battery_current_now(void);
+#endif
 
 #endif /* __MTK_CHARGER_H__ */

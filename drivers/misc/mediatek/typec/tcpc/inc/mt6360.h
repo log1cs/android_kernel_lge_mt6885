@@ -379,6 +379,7 @@ enum mt6360_id_rupsel {
  * MT6360_REG_VCONN_CTRL3		(0xE3)
  */
 #define MT6360_VCONN_RVP_EN		BIT(7)
+#define MT6360_VCONN_VDDH_ENB	BIT(3)
 
 /*
  * MT6360_REG_CTD_CTRL2			(0xEC)

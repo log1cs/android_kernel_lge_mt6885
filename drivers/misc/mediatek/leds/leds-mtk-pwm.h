@@ -29,6 +29,11 @@ int mt_leds_brightness_set(char *name, int bl_1024);
 int setMaxBrightness(char *name, int percent, bool enable);
 
 extern void disp_pq_notify_backlight_changed(int bl_1024);
+extern void disp_aal_notify_backlight_changed(int bl_1024);
 extern int enable_met_backlight_tag(void);
 extern int output_met_backlight_tag(int level);
-
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+void lge_set_last_brightness(int brightness);
+int lge_get_last_brightness(void);
+int mt_leds_brightness_set_ex(char *name, int level);
+#endif

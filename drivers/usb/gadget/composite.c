@@ -23,6 +23,12 @@
 #include <asm/unaligned.h>
 
 #include "u_os_desc.h"
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+static bool disable_multi_config;
+module_param(disable_multi_config, bool, 0644);
+MODULE_PARM_DESC(disable_multi_config,
+	"Disable support for Multiple Configuration");
+#endif
 
 /**
  * struct usb_os_string - represents OS String to be reported by a gadget
@@ -496,6 +502,53 @@ static u8 encode_bMaxPower(enum usb_device_speed speed,
 		return min(val, 900U) / 8;
 }
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+/*USB IF Start*/
+#include "tcpm.h"
+#include <typec.h>
+static struct tcpc_device *dp_tcpc_dev;
+/*static struct notifier_block nb; */
+static bool USB_PE_READY_SNK = 0;
+
+/*
+static int pd_tcp_notifier_call(struct notifier_block *nb, unsigned long event, void *data)
+{
+	struct tcp_notify *noti = data;
+
+	switch (event) {
+	case TCP_NOTIFY_PD_STATE:
+		switch (noti->pd_state.connected) {
+		case PD_CONNECT_PE_READY_SNK:
+			pr_info("%s: USB IF PD_CONNECT_PE_READY_SNK\n", __func__);
+			USB_PE_READY_SNK = 1;
+			break;
+		}
+		break;
+	}
+}
+*/
+
+static int __init usb_pd_init(void)
+{
+	/* struct device_node *np; */
+
+	pr_info("%s: initializing...\n", __func__);
+
+	dp_tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
+	if (!dp_tcpc_dev) {
+		pr_info("%s get tcpc device type_c_port0 fail\n", __func__);
+		return -ENODEV;
+	}
+
+	//TODO : need to remove for USB embedded host test
+	//nb.notifier_call = pd_tcp_notifier_call;
+	//register_tcp_dev_notifier(dp_tcpc_dev, &nb, TCP_NOTIFY_TYPE_USB | TCP_NOTIFY_TYPE_MISC);
+	return 0;
+}
+late_initcall(usb_pd_init);
+/*USB IF End*/
+#endif
+
 static int config_buf(struct usb_configuration *config,
 		enum usb_device_speed speed, void *buf, u8 type)
 {
@@ -517,6 +570,14 @@ static int config_buf(struct usb_configuration *config,
 	c->bmAttributes = USB_CONFIG_ATT_ONE | config->bmAttributes;
 	c->bMaxPower = encode_bMaxPower(speed, config);
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	if (USB_PE_READY_SNK) {
+		pr_info("%s: PD_CONNECT_PE_READY_SNK\n", __func__);
+		c->bmAttributes = USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER;
+		c->bMaxPower = 0;
+	}
+#endif
+
 	/* There may be e.g. OTG descriptors */
 	if (config->descriptors) {
 		status = usb_descriptor_fillbuf(next, len,
@@ -530,6 +591,11 @@ static int config_buf(struct usb_configuration *config,
 	/* add each function's descriptors */
 	list_for_each_entry(f, &config->functions, list) {
 		struct usb_descriptor_header **descriptors;
+
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+		if (config->cdev->is_mac_os && f->set_mac_os)
+			f->set_mac_os(f);
+#endif
 
 		descriptors = function_descriptors(f, speed);
 		if (!descriptors)
@@ -810,6 +876,11 @@ static int set_config(struct usb_composite_dev *cdev,
 	int			tmp;
 
 	if (number) {
+		#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+		if((disable_multi_config || cdev->disable_multi_config) &&
+			(number > 1))
+			goto done;
+		#endif
 		list_for_each_entry(c, &cdev->configs, list) {
 			if (c->bConfigurationValue == number) {
 				/*
@@ -849,6 +920,10 @@ static int set_config(struct usb_composite_dev *cdev,
 		if (!f)
 			break;
 
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+		if (f->set_config)
+			f->set_config(f, number);
+#endif
 		/*
 		 * Record which endpoints are used by the function. This is used
 		 * to dispatch control requests targeted at that endpoint to the
@@ -1461,6 +1536,14 @@ static int composite_ep0_queue(struct usb_composite_dev *cdev,
 
 static int count_ext_compat(struct usb_configuration *c)
 {
+#ifdef CONFIG_LGE_USB
+	/*
+	 * NOTE: On Windows 10, if you respond to more than one
+	 * "extended compatibility ID", there is a problem that
+	 * the USB is not recognized.
+	 */
+	return 1;
+#else
 	int i, res;
 
 	res = 0;
@@ -1481,6 +1564,7 @@ static int count_ext_compat(struct usb_configuration *c)
 	}
 	BUG_ON(res > 255);
 	return res;
+#endif
 }
 
 static int fill_ext_compat(struct usb_configuration *c, u8 *buf)
@@ -1499,6 +1583,20 @@ static int fill_ext_compat(struct usb_configuration *c, u8 *buf)
 			if (i != f->os_desc_table[j].if_id)
 				continue;
 			d = f->os_desc_table[j].os_desc;
+#ifdef CONFIG_LGE_USB
+			/*
+			 * NOTE: On Windows 10, if you respond to more than one
+			 * "extended compatibility ID", there is a problem that
+			 * the USB is not recognized.
+			 */
+			if (d && d->ext_compat_id && d->ext_compat_id[0]) {
+				*buf++ = i;
+				*buf++ = 0x01;
+				memcpy(buf, d->ext_compat_id, 16);
+				count += 24;
+				break;
+			}
+#else
 			if (d && d->ext_compat_id) {
 				*buf++ = i;
 				*buf++ = 0x01;
@@ -1512,8 +1610,24 @@ static int fill_ext_compat(struct usb_configuration *c, u8 *buf)
 			count += 24;
 			if (count + 24 >= USB_COMP_EP0_OS_DESC_BUFSIZ)
 				return count;
+#endif
 		}
 	}
+
+#ifdef CONFIG_LGE_USB
+	/*
+	 * NOTE: On Windows 10, there is a problem that USB recognition is not
+	 * possible without "extended compatibility ID". If there is no
+	 * "extended compatibility ID" to respond, "No compatible or
+	 * sub-compatible ID" is returned. "No compatible or sub-compatible ID"
+	 * is "(0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00)".
+	 */
+	if (count == 16) {
+		++buf;
+		*buf = 0x01;
+		count += 24;
+	}
+#endif
 
 	return count;
 }
@@ -1629,6 +1743,18 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	u8				endp;
 	static DEFINE_RATELIMIT_STATE(ratelimit, 1 * HZ, 5);
 
+	if (w_length > USB_COMP_EP0_BUFSIZ) {
+		if (ctrl->bRequestType & USB_DIR_IN) {
+			/* Cast away the const, we are going to overwrite on purpose. */
+			__le16 *temp = (__le16 *)&ctrl->wLength;
+
+			*temp = cpu_to_le16(USB_COMP_EP0_BUFSIZ);
+			w_length = USB_COMP_EP0_BUFSIZ;
+		} else {
+			goto done;
+		}
+	}
+
 	/* partial re-init of the response message; the function or the
 	 * gadget might need to intercept e.g. a control-OUT completion
 	 * when we delegate to it.
@@ -1645,6 +1771,10 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	 */
 	if ((ctrl->bRequestType & USB_TYPE_MASK) != USB_TYPE_STANDARD)
 		goto unknown;
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	pr_notice("%s, ctrl->bRequest:%x w_value:%x\n", __func__, ctrl->bRequest, w_value >> 8);
+#endif
 
 	switch (ctrl->bRequest) {
 
@@ -1673,6 +1803,14 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 					cdev->desc.bcdUSB = cpu_to_le16(0x0200);
 			}
 
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+			if (w_length < (u16) sizeof cdev->desc)
+				cdev->disable_multi_config = true;
+
+			if (disable_multi_config || cdev->disable_multi_config)
+				cdev->desc.bNumConfigurations = 1;
+#endif
+
 			value = min(w_length, (u16) sizeof cdev->desc);
 			memcpy(req->buf, &cdev->desc, value);
 			break;
@@ -1695,14 +1833,23 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				value = min(w_length, (u16) value);
 			break;
 		case USB_DT_STRING:
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+			DBG(cdev, "USB_DT_STRING w_length = %02X\n", w_length);
+			if (w_length == 0x02) /* MAC OS TYPE */
+				cdev->is_mac_os = true;
+#endif
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
 			if (value >= 0)
 				value = min(w_length, (u16) value);
 			break;
 		case USB_DT_BOS:
+#ifdef CONFIG_LGE_USB_GADGET
+			if (le16_to_cpu(cdev->desc.bcdUSB) > 0x200) {
+#else
 			if (gadget_is_superspeed(gadget) ||
 			    gadget->lpm_capable) {
+#endif
 				value = bos_desc(cdev);
 				value = min(w_length, (u16) value);
 			}
@@ -1869,6 +2016,25 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			if (!cdev->config || intf >= MAX_CONFIG_INTERFACES)
 				break;
 			f = cdev->config->interface[intf];
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+			/* XXX:
+			 * Chater 9 Tests[USB 3 Gen X devices]
+			 * TD 9.14 Suspend/Resume Test
+			 *
+			 * After the re-enumeration, the Configuration Value is
+			 * set to 1 and it fails. Modify it to reference other
+			 * Configuration values as well.
+			 */
+			if (!f) {
+				struct usb_configuration *c = NULL;
+
+				list_for_each_entry(c, &cdev->configs, list) {
+					f = c->interface[intf];
+					if (f)
+						break;
+				}
+			}
+#endif
 			if (!f)
 				break;
 			value = 0;
@@ -1945,6 +2111,9 @@ unknown:
 				if (w_index != 0x5 || (w_value >> 8))
 					break;
 				interface = w_value & 0xFF;
+				if (interface >= MAX_CONFIG_INTERFACES ||
+				    !os_desc_cfg->interface[interface])
+					break;
 				buf[6] = w_index;
 				if (w_length == 0x0A) {
 					count = count_ext_prop(os_desc_cfg,
@@ -2112,6 +2281,13 @@ void composite_disconnect(struct usb_gadget *gadget)
 		reset_config(cdev);
 	if (cdev->driver->disconnect)
 		cdev->driver->disconnect(cdev);
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+	cdev->is_mac_os = false;
+	cdev->disable_multi_config = false;
+#endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+	cdev->desc.bcdUSB = cpu_to_le16(0x0000);
+#endif
 	spin_unlock_irqrestore(&cdev->lock, flags);
 }
 
@@ -2213,7 +2389,7 @@ int composite_dev_prepare(struct usb_composite_driver *composite,
 	if (!cdev->req)
 		return -ENOMEM;
 
-	cdev->req->buf = kmalloc(USB_COMP_EP0_BUFSIZ, GFP_KERNEL);
+	cdev->req->buf = kzalloc(USB_COMP_EP0_BUFSIZ, GFP_KERNEL);
 	if (!cdev->req->buf)
 		goto fail;
 

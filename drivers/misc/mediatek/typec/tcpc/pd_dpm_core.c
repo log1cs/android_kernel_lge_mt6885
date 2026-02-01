@@ -717,6 +717,10 @@ void pd_dpm_snk_transition_power(struct pd_port *pd_port)
 			pd_port, pd_port->request_apdo_new);
 	}
 #endif	/* CONFIG_USB_PD_REV30_PPS_SINK */
+
+#if defined(CONFIG_LGE_USB_TYPE_C) && defined(CONFIG_DUAL_ROLE_USB_INTF)
+	dual_role_instance_changed(pd_port->tcpc_dev->dr_usb);
+#endif
 }
 
 void pd_dpm_snk_hard_reset(struct pd_port *pd_port)
@@ -824,6 +828,9 @@ void pd_dpm_src_evaluate_request(struct pd_port *pd_port)
 
 	rdo = payload[0];
 	rdo_pos = RDO_POS(rdo);
+#ifdef CONFIG_LGE_USB_TYPE_C
+	pd_port->last_rdo = rdo;
+#endif
 
 	DPM_INFO("RequestCap%d\r\n", rdo_pos);
 
@@ -873,6 +880,10 @@ void pd_dpm_src_transition_power(struct pd_port *pd_port)
 
 	pd_port->request_v = pd_port->request_v_new;
 	pd_port->request_i = pd_port->request_i_new;
+
+#if defined(CONFIG_LGE_USB_TYPE_C) && defined(CONFIG_DUAL_ROLE_USB_INTF)
+	dual_role_instance_changed(pd_port->tcpc_dev->dr_usb);
+#endif
 }
 
 void pd_dpm_src_hard_reset(struct pd_port *pd_port)

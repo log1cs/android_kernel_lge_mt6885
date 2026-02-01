@@ -765,4 +765,10 @@ config KEYBOARD_MTK_PMIC
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called pmic-keys.
+
+config LGE_HALLIC_SUPPORT
+	bool "LGE HALLIC Support"
+	default n
+	help
+	  Say Y here if you want to use hall ic. If unuse, say N.
 endif

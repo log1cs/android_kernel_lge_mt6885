@@ -20,7 +20,6 @@
 #include <linux/slab.h>
 #include <linux/kobject.h>
 #include <linux/atomic.h>
-#include <linux/of.h>
 
 #include "ccci_config.h"
 #include "ccci_platform.h"
@@ -33,9 +32,34 @@
 #include <mt-plat/mtk_meminfo.h>
 #include <mt-plat/mtk_ccci_common.h>
 #include <mt-plat/mtk_boot_common.h>
+
+#ifdef CONFIG_MACH_LGE
+#include <soc/mediatek/lge/board_lge.h>
+#endif
+
 #if defined(ENABLE_32K_CLK_LESS)
 #include <mt-plat/mtk_rtc.h>
 #endif
+
+#if defined(CONFIG_LGE_BOOT_MODE)
+#include <soc/mediatek/lge/lge_boot_mode.h>
+#define FEATURE_TC1_CUSTOMER_VAL
+#endif
+#ifdef CONFIG_MTK_TC1_FEATURE
+#include "../tc1_interface/lg_partition.h"
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+
+unsigned char g_lge_mcc[4] = "";
+unsigned char g_lge_mnc[4] = "";
+unsigned char g_lge_subset[4] = "";
+
+EXPORT_SYMBOL(g_lge_mcc);
+EXPORT_SYMBOL(g_lge_mnc);
+EXPORT_SYMBOL(g_lge_subset);
+#endif
+extern char g_lge_sim_num[4];
+extern char g_lge_sku_carrier[16];
 
 #define TAG "md"
 
@@ -904,7 +928,7 @@ void ccci_md_config(struct ccci_modem *md)
 #if (MD_GENERATION >= 6293)
 	if (md->index == MD_SYS1) {
 		md->mem_layout.md_bank4_cacheable_total.base_md_view_phy =
-			0x40000000 + (224 * 1024 * 1024) +
+			0x40000000 + get_md_smem_cachable_offset(MD_SYS1) +
 			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
 			- round_down(
 			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
@@ -1372,54 +1396,6 @@ static void append_runtime_feature(char **p_rt_data,
 	}
 }
 
-struct ccci_tag_bootmode {
-	u32 size;
-	u32 tag;
-	u32 bootmode;
-	u32 boottype;
-};
-
-static unsigned int get_boot_mode_from_dts(void)
-{
-	struct device_node *np_chosen = NULL;
-	struct ccci_tag_bootmode *tag = NULL;
-	u32 bootmode = NORMAL_BOOT_ID;
-
-	np_chosen = of_find_node_by_path("/chosen");
-	if (!np_chosen) {
-		CCCI_ERROR_LOG(-1, TAG, "warning: not find node: '/chosen'\n");
-
-		np_chosen = of_find_node_by_path("/chosen@0");
-		if (!np_chosen) {
-			CCCI_ERROR_LOG(-1, TAG,
-				"[%s] error: not find node: '/chosen@0'\n",
-				__func__);
-			return NORMAL_BOOT_ID;
-		}
-	}
-
-	tag = (struct ccci_tag_bootmode *)
-			of_get_property(np_chosen, "atag,boot", NULL);
-	if (!tag) {
-		CCCI_ERROR_LOG(-1, TAG,
-			"[%s] error: not find tag: 'atag,boot';\n", __func__);
-		return NORMAL_BOOT_ID;
-	}
-
-	if (tag->bootmode == META_BOOT || tag->bootmode == ADVMETA_BOOT)
-		bootmode = META_BOOT_ID;
-
-	else if (tag->bootmode == FACTORY_BOOT ||
-			tag->bootmode == ATE_FACTORY_BOOT)
-		bootmode = FACTORY_BOOT_ID;
-
-	CCCI_NORMAL_LOG(-1, TAG,
-		"[%s] bootmode: 0x%x boottype: 0x%x; return: 0x%x\n",
-		__func__, tag->bootmode, tag->boottype, bootmode);
-
-	return bootmode;
-}
-
 /*
  *booting_start_id bit mapping:
  * |31---------16|15-----------8|7---------0|
@@ -1433,16 +1409,34 @@ static unsigned int get_booting_start_id(struct ccci_modem *md)
 	enum LOGGING_MODE mdlog_flag = MODE_IDLE;
 	u32 booting_start_id;
 
-	mdlog_flag = (md->mdlg_mode & 0x0000ffff);
-
-	booting_start_id = (((char)mdlog_flag << 8)
-						| get_boot_mode_from_dts());
-
-	booting_start_id |= (md->mdlg_mode & 0xffff0000);
+	mdlog_flag = md->mdlg_mode & 0x0000ffff;
+	if (md->per_md_data.md_boot_mode != MD_BOOT_MODE_INVALID) {
+		if (md->per_md_data.md_boot_mode == MD_BOOT_MODE_META)
+			booting_start_id = ((char)mdlog_flag << 8
+								| META_BOOT_ID);
+		else if ((get_boot_mode() == FACTORY_BOOT ||
+				get_boot_mode() == ATE_FACTORY_BOOT))
+			booting_start_id = ((char)mdlog_flag << 8
+							| FACTORY_BOOT_ID);
+		else
+			booting_start_id = ((char)mdlog_flag << 8
+							| NORMAL_BOOT_ID);
+	} else {
+		if (is_meta_mode() || is_advanced_meta_mode())
+			booting_start_id = ((char)mdlog_flag << 8
+							| META_BOOT_ID);
+		else if ((get_boot_mode() == FACTORY_BOOT ||
+				get_boot_mode() == ATE_FACTORY_BOOT))
+			booting_start_id = ((char)mdlog_flag << 8
+							| FACTORY_BOOT_ID);
+		else
+			booting_start_id = ((char)mdlog_flag << 8
+							| NORMAL_BOOT_ID);
+	}
+	booting_start_id |= md->mdlg_mode & 0xffff0000;
 
 	CCCI_BOOTUP_LOG(md->index, TAG,
 		"%s 0x%x\n", __func__, booting_start_id);
-
 	return booting_start_id;
 }
 
@@ -1643,6 +1637,16 @@ static void config_ap_side_feature(struct ccci_modem *md,
 	md_feature->feature_set[MISC_INFO_CUSTOMER_VAL].support_mask
 		= CCCI_FEATURE_NOT_SUPPORT;
 #endif
+	md_feature->feature_set[MISC_INFO_NTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_SIMNUM].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2NTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_HWGPIO].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_LASTNTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2LASTNTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_GID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2GID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_LASTGID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2LASTGID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
 #ifdef FEATURE_SYNC_C2K_MEID
 	md_feature->feature_set[MISC_INFO_C2K_MEID].support_mask
 		= CCCI_FEATURE_MUST_SUPPORT;
@@ -1679,12 +1683,15 @@ static void config_ap_side_feature(struct ccci_modem *md,
 	md_feature->feature_set[NVRAM_CACHE_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_NOT_SUPPORT;
 #endif
+
+/* This item is reserved,only special use */
+#ifdef ENABLE_SECURITY_SHARE_MEMORY
 	md_feature->feature_set[SECURITY_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_MUST_SUPPORT;
-
-	/* This item is reserved */
+#else
 	md_feature->feature_set[SECURITY_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_NOT_SUPPORT;
+#endif
 
 #if (MD_GENERATION >= 6297)
 	md_feature->feature_set[MD_MEM_AP_VIEW_INF].support_mask =
@@ -1801,6 +1808,100 @@ static void ccci_smem_region_set_runtime(unsigned char md_id, unsigned int id,
 	}
 }
 
+#ifdef CONFIG_MTK_TC1_FEATURE
+void lge_convert_ntcode_format_to_string (struct FactoryNetworkCode *mtk_atcmd_ntcode, char *mcc, char *mnc, char *subset)
+{
+	int length = 0;
+	char buffer[4];
+
+	struct FactoryNetworkCode *in;
+
+	char *out1 = mcc;
+	char *out2 = mnc;
+	char *out3 = subset;
+
+	in = &mtk_atcmd_ntcode[0];
+
+	memset(buffer, 0x00, sizeof(buffer));
+
+	length += sprintf(buffer, "%1X%1X%1X", in->Mcc[0], in->Mcc[1], in->Mcc[2]);
+
+	strncpy(out1, buffer, 3);
+
+	memset(buffer, 0x00, sizeof(buffer));
+
+	length += sprintf(buffer, "%1X%1X%1X", in->Mnc[0], in->Mnc[1], in->Mnc[2]);
+
+	strncpy(out2, buffer, 3);
+
+	memset(buffer, 0x00, sizeof(buffer));
+
+	length += sprintf(buffer, "%1X%1X", in->Subset[0], in->Subset[1]);
+
+	strncpy(out3, buffer, 2);
+
+}
+
+void lge_get_gid_string_from_ntcode (struct FactoryNetworkCode *mtk_atcmd_ntcode, char *gid11, char *gid12, char *gid21, char *gid22)
+{
+	int length = 0;
+	char buffer[5];
+
+	struct FactoryNetworkCode *in;
+
+	char *out1 = gid11;
+	char *out2 = gid12;
+	char *out3 = gid21;
+	char *out4 = gid22;
+
+	in = &mtk_atcmd_ntcode[0];
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid1[0], in->Gid1[1], in->Gid1[2], in->Gid1[3]);
+	strncpy(out1, buffer, 4);
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid1[4], in->Gid1[5], in->Gid1[6], in->Gid1[7]);
+	strncpy(out2, buffer, 4);
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid2[0], in->Gid2[1], in->Gid2[2], in->Gid2[3]);
+	strncpy(out3, buffer, 4);
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid2[4], in->Gid2[5], in->Gid2[6], in->Gid2[7]);
+	strncpy(out4, buffer, 4);
+}
+
+int find_ntcode_num(struct FactoryNetworkCode *ntcode_buff)
+{
+	int i=0;
+	char tmcc[4] = "";
+	char tmnc[4] = "";
+	char tsubset[4] = "";
+
+	for (i=0; i<LGE_FAC_MAX_NETWORK_CODE_LIST_NUM; i++)
+	{
+		lge_convert_ntcode_format_to_string (&ntcode_buff[i], tmcc, tmnc, tsubset);
+		pr_err("searchingi=%d : tmcc = %s, tmnc= %s, tsubset= %s  \n", i, tmcc, tmnc, tsubset);
+	}
+
+	for (i=1; i<LGE_FAC_MAX_NETWORK_CODE_LIST_NUM; i++)
+	{
+		lge_convert_ntcode_format_to_string (&ntcode_buff[i], tmcc, tmnc, tsubset);
+		if(strcmp(tmcc,"FFF")==0 && strcmp(tmnc,"FFF")==0 && strcmp(tsubset,"FF")==0)
+		{
+			if(i == 1)
+			     i++;
+			pr_err("Last ntcode is %d \n", i-1);
+			return i-1;
+		}
+	}
+	pr_err("Last ntcode is the last value %d \n", i-1);
+	return i-1;
+}
+#endif
+
 int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 	int length)
 {
@@ -1827,6 +1928,19 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 	unsigned int random_seed = 0;
 	struct timeval t;
 	unsigned int c2k_flags = 0;
+#ifdef CONFIG_MTK_TC1_FEATURE
+	extern struct FactoryNetworkCode *temp_buf_ntcode;
+	extern char *temp_buf_svn;
+	char mcc[4] = "";
+	char mnc[4] = "";
+	char subset[3] = "";
+	char gid11[5] = "";
+	char gid12[5] = "";
+	char gid21[5] = "";
+	char gid22[5] = "";
+	int nt_num=0;
+#endif
+	char sim_num[4] = "";
 
 	CCCI_BOOTUP_LOG(md->index, TAG,
 		"prepare_runtime_data  AP total %u features\n",
@@ -2069,12 +2183,19 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 					< modem_ultg)
 					rt_f_element.feature[1] = 0;
 				else
-					rt_f_element.feature[1] =
-					get_wm_bitmap_for_ubin();
+#ifdef CONFIG_MACH_LGE
+//					rt_f_element.feature[1] = 0; // lge_get_wm_id();  // temp - compile error fix
+					rt_f_element.feature[1] = lge_get_wm_id();
+#else
+					rt_f_element.feature[1] = get_wm_bitmap_for_ubin();
+#endif
 				CCCI_BOOTUP_LOG(md->index, TAG,
 					"sbp=0x%x,wmid[%d]\n",
 					rt_f_element.feature[0],
 					rt_f_element.feature[1]);
+
+				pr_err("%s: ccci sbp=0x%x, wmid[%x]\n", __func__, rt_f_element.feature[0], rt_f_element.feature[1]);
+
 				append_runtime_feature(&rt_data,
 				&rt_feature, &rt_f_element);
 				break;
@@ -2230,6 +2351,180 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 					&rt_feature, &rt_shm);
 				append_runtime_feature(&rt_data, &rt_feature,
 				&rt_shm);
+				break;
+			case MISC_INFO_CUSTOMER_VAL:
+				rt_feature.data_len =
+					sizeof(struct ccci_misc_info_element);
+				memset((void *)&rt_f_element, 0x0,
+					sizeof(struct ccci_misc_info_element));
+#if defined(CONFIG_LGE_BOOT_MODE)
+				rt_f_element.feature[0] = (int) lge_boot_mode;
+#endif
+				append_runtime_feature(&rt_data, &rt_feature,
+						&rt_f_element);
+				break;
+#ifdef CONFIG_MTK_TC1_FEATURE
+			case MISC_INFO_NTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				lge_convert_ntcode_format_to_string (&temp_buf_ntcode[0], mcc, mnc, subset); //NTCODE
+				strncpy (g_lge_mcc, mcc, 3);
+				strncpy (g_lge_mnc, mnc, 3);
+				strncpy (g_lge_subset, subset, 2);
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mcc=[%s], mnc[%s], subset[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2NTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				lge_convert_ntcode_format_to_string (&temp_buf_ntcode[1], mcc, mnc, subset); //2nd NTCODE
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mcc2=[%s], mnc2[%s], subset2[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_LASTNTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 1)
+					lge_convert_ntcode_format_to_string (&temp_buf_ntcode[nt_num], mcc, mnc, subset); //Last NTCODE
+				else
+				{
+					strncpy (mcc, "FFF", 3);
+					strncpy (mnc, "FFF", 3);
+					strncpy (subset, "FF", 2);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mccLast=[%s], mncLast[%s], subsetLast[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2LASTNTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 2)
+					lge_convert_ntcode_format_to_string (&temp_buf_ntcode[nt_num-1], mcc, mnc, subset); //2nd Last NTCODE
+				else
+				{
+					strncpy (mcc, "FFF", 3);
+					strncpy (mnc, "FFF", 3);
+					strncpy (subset, "FF", 2);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mccLast=[%s], mncLast[%s], subsetLast[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_GID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				lge_get_gid_string_from_ntcode (&temp_buf_ntcode[0], gid11, gid12, gid21, gid22); //GID
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2GID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				lge_get_gid_string_from_ntcode (&temp_buf_ntcode[1], gid11, gid12, gid21, gid22); //GID
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_LASTGID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 1)
+					lge_get_gid_string_from_ntcode (&temp_buf_ntcode[nt_num], gid11, gid12, gid21, gid22); //GID
+				else
+				{
+					strncpy (gid11, "FFFF", 4);
+					strncpy (gid12, "FFFF", 4);
+					strncpy (gid21, "FFFF", 4);
+					strncpy (gid22, "FFFF", 4);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2LASTGID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 2)
+					lge_get_gid_string_from_ntcode (&temp_buf_ntcode[nt_num-1], gid11, gid12, gid21, gid22); //GID
+				else
+				{
+					strncpy (gid11, "FFFF", 4);
+					strncpy (gid12, "FFFF", 4);
+					strncpy (gid21, "FFFF", 4);
+					strncpy (gid22, "FFFF", 4);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_C2K_MEID:
+				pr_err("%s: request: MISC_INFO_C2K_MEID", __func__);
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				CCCI_NORMAL_LOG(md->index, TAG, "before tc1_read_meid_syncform");
+#if defined(FEATURE_SYNC_C2K_MEID)
+				tc1_read_meid_syncform((unsigned char *)&rt_f_element.feature[0], 16);
+#endif
+				CCCI_NORMAL_LOG(md->index, TAG, "MEID %x-%x-%x-%x\n", rt_f_element.feature[0],
+					rt_f_element.feature[1], rt_f_element.feature[2], rt_f_element.feature[3]);
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+
+				pr_err("%s: MEID %x-%x-%x-%x\n", __func__, rt_f_element.feature[0],
+                    rt_f_element.feature[1], rt_f_element.feature[2], rt_f_element.feature[3]);
+				break;
+
+#endif
+			case MISC_INFO_SIMNUM:
+				rt_feature.data_len = sizeof(sim_num);
+				memcpy((char*)&sim_num, g_lge_sim_num, 4);
+				pr_err("send sim number = %s\n", sim_num);
+				append_runtime_feature(&rt_data, &rt_feature, &sim_num);
+				break;
+			case MISC_INFO_HWGPIO:
+				pr_err("MISC_INFO_HWGPIO\n");
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				pr_err("g_lge_sku_carrier = %s\n", g_lge_sku_carrier);
+				memcpy((char*)&(rt_f_element.feature[0]), g_lge_sku_carrier, sizeof(g_lge_sku_carrier));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
 				break;
 			case MD_MTEE_SHARE_MEMORY_ENABLE:
 				rt_feature.data_len = sizeof(unsigned int);

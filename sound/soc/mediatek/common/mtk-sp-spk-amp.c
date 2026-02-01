@@ -30,14 +30,18 @@
 #include "../../codecs/tfa98xx/inc/tfa98xx_ext.h"
 #endif
 
-#ifdef CONFIG_SND_SOC_AW87339
-#include "aw87339.h"
+// mtk patch for test
+#define TFADSP_BYPASS_ISSUE_WA
+#ifdef TFADSP_BYPASS_ISSUE_WA
+#include "mtk-dsp-mem-control.h"
+#include "mtk-dsp-common_define.h"
 #endif
 
 #define MTK_SPK_NAME "Speaker Codec"
 #define MTK_SPK_REF_NAME "Speaker Codec Ref"
 static unsigned int mtk_spk_type;
 static int mtk_spk_i2s_out, mtk_spk_i2s_in;
+#ifndef MTK_TFA_STEREO
 static struct mtk_spk_i2c_ctrl mtk_spk_list[MTK_SPK_TYPE_NUM] = {
 	[MTK_SPK_NOT_SMARTPA] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
@@ -111,7 +115,7 @@ static void mtk_spk_i2c_shutdown(struct i2c_client *client)
 	if (mtk_spk_list[mtk_spk_type].i2c_shutdown)
 		mtk_spk_list[mtk_spk_type].i2c_shutdown(client);
 }
-
+#endif /*!MTK_TFA_STEREO*/
 int mtk_spk_get_type(void)
 {
 	return mtk_spk_type;
@@ -130,26 +134,23 @@ int mtk_spk_get_i2s_in_type(void)
 }
 EXPORT_SYMBOL(mtk_spk_get_i2s_in_type);
 
-int mtk_ext_spk_get_status(void)
-{
-#ifdef CONFIG_SND_SOC_AW87339
-	return aw87339_spk_status_get();
-#else
-	return 0;
+#if defined(MTK_TFA_STEREO)
+static struct snd_soc_dai_link_component multi_codecs[] = {
+	{
+		.name = "tfa98xx-codec.6-0034",
+		.dai_name = "tfa98xx-aif-6-34"
+	},
+	{
+		.name = "tfa98xx-codec.6-0035",
+		.dai_name = "tfa98xx-aif-6-35"
+	},
+};
+static struct snd_soc_dai_link_component multi_codecs_rx[ARRAY_SIZE(multi_codecs)];
+static struct snd_soc_dai_link_component multi_codecs_tx[ARRAY_SIZE(multi_codecs)];
 #endif
-}
-EXPORT_SYMBOL(mtk_ext_spk_get_status);
-
-void mtk_ext_spk_enable(int enable)
-{
-#ifdef CONFIG_SND_SOC_AW87339
-	aw87339_spk_enable_set(enable);
-#endif
-}
-EXPORT_SYMBOL(mtk_ext_spk_enable);
 
 int mtk_spk_update_info(struct snd_soc_card *card,
-			struct platform_device *pdev,
+                        struct platform_device *pdev,
 			int *spk_out_dai_link_idx, int *spk_ref_dai_link_idx,
 			const struct snd_soc_ops *i2s_ops)
 {
@@ -271,7 +272,13 @@ int mtk_spk_update_dai_link(struct snd_soc_card *card,
 	int spk_dai_link_idx = -1;
 	int i2s_mck;
 	struct snd_soc_dai_link *dai_link;
-
+#if defined(MTK_TFA_STEREO)
+	struct device_node *np;
+	int index;
+#endif
+#ifdef MTK_TFA_STEREO
+	mtk_spk_type = MTK_SPK_NXP_TFA98XX; 
+#endif
 	dev_info(&pdev->dev, "%s(), mtk_spk_type %d\n",
 		 __func__, mtk_spk_type);
 
@@ -365,6 +372,43 @@ int mtk_spk_update_dai_link(struct snd_soc_card *card,
 	/* update spk codec dai name and codec name */
 	dai_link = &card->dai_link[spk_dai_link_idx];
 	dai_link->name = MTK_SPK_NAME;
+#if defined(MTK_TFA_STEREO)
+	memcpy(multi_codecs_rx, multi_codecs, sizeof(multi_codecs));
+	dai_link->codec_name = NULL;
+	dai_link->codec_dai_name = NULL;
+	dai_link->codecs = multi_codecs_rx;
+	dai_link->num_codecs = ARRAY_SIZE(multi_codecs_rx); 
+	dai_link->ignore_pmdown_time = 1;
+
+	if (i2s_mck == mtk_spk_i2s_out)
+		dai_link->ops = i2s_ops;
+
+	for(i=0; i< dai_link->num_codecs; i++){
+		index = of_property_match_string(pdev->dev.of_node, "ext-codec-names",
+				dai_link->codecs[i].name);
+		if(index < 0)
+			continue;
+		np = of_parse_phandle(pdev->dev.of_node, "ext-codec",index);
+		if(!np){
+			pr_err("%s: retrieving phandle for codec %s failed\n",__func__, dai_link->codecs[i].name);
+		}
+	    dai_link->codecs[i].of_node = np;	
+		dai_link->codecs[i].name = NULL;
+	}
+	dev_err(&pdev->dev,
+		 "%s(), %s, codec dai name = %s, codec name = %s, cpu dai name: %s,num_of_codec: %d\n",
+		 __func__, dai_link->name,
+		 dai_link->codecs[0].dai_name,
+		 dai_link->codecs[0].name,
+		 dai_link->cpu_dai_name,
+		 dai_link->num_codecs);
+	dev_err(&pdev->dev,
+		 "%s(), %s, codec dai name = %s, codec name = %s, cpu dai name: %s\n",
+		 __func__, dai_link->name,
+		 dai_link->codecs[1].dai_name,
+		 dai_link->codecs[1].name,
+		 dai_link->cpu_dai_name);
+#else /*!MTK_TFA_STEREO*/
 	dai_link->codec_dai_name =
 		mtk_spk_list[mtk_spk_type].codec_dai_name;
 	dai_link->codec_name =
@@ -379,9 +423,43 @@ int mtk_spk_update_dai_link(struct snd_soc_card *card,
 		 dai_link->codec_dai_name,
 		 dai_link->codec_name,
 		 dai_link->cpu_dai_name);
-
+#endif /*MTK_TFA_STEREO*/
 	dai_link = &card->dai_link[spk_ref_dai_link_idx];
 	dai_link->name = MTK_SPK_REF_NAME;
+#if defined(MTK_TFA_STEREO)
+	memcpy(multi_codecs_tx, multi_codecs, sizeof(multi_codecs));
+	dai_link->codec_name = NULL;
+	dai_link->codec_dai_name = NULL;
+	dai_link->codecs = multi_codecs_tx;
+	dai_link->num_codecs = ARRAY_SIZE(multi_codecs_tx); 
+	dai_link->ignore_pmdown_time = 1;
+	if (i2s_mck == mtk_spk_i2s_in)
+		dai_link->ops = i2s_ops;
+	for(i=0; i< dai_link->num_codecs; i++){
+		index = of_property_match_string(pdev->dev.of_node, "ext-codec-names",
+				dai_link->codecs[i].name);
+		if(index < 0)
+			continue;
+		np = of_parse_phandle(pdev->dev.of_node, "ext-codec",index);
+		if(!np){
+			pr_err("%s: retrieving phandle for codec %s failed\n",__func__, dai_link->codecs[i].name);
+		}
+	    dai_link->codecs[i].of_node = np;	
+		dai_link->codecs[i].name = NULL;
+	}
+	dev_err(&pdev->dev,
+		 "%s(), %s, codec dai name = %s, codec name = %s, cpu dai name: %s\n",
+		 __func__, dai_link->name,
+		 dai_link->codecs[0].dai_name,
+		 dai_link->codecs[0].name,
+		 dai_link->cpu_dai_name);
+	dev_err(&pdev->dev,
+		 "%s(), %s, codec dai name = %s, codec name = %s, cpu dai name: %s\n",
+		 __func__, dai_link->name,
+		 dai_link->codecs[1].dai_name,
+		 dai_link->codecs[1].name,
+		 dai_link->cpu_dai_name);
+#else /*!MTK_TFA_STEREO*/
 	dai_link->codec_dai_name =
 		mtk_spk_list[mtk_spk_type].codec_dai_name;
 	dai_link->codec_name =
@@ -396,7 +474,7 @@ int mtk_spk_update_dai_link(struct snd_soc_card *card,
 		 dai_link->codec_dai_name,
 		 dai_link->codec_name,
 		 dai_link->cpu_dai_name);
-
+#endif /*MTK_TFA_STEREO*/
 
 	return 0;
 }
@@ -410,9 +488,15 @@ int mtk_spk_send_ipi_buf_to_dsp(void *data_buffer, uint32_t data_size)
 	int task_scene;
 
 	memset((void *)&ipi_msg, 0, sizeof(struct ipi_msg_t));
+
+#ifdef TFADSP_BYPASS_ISSUE_WA
+    task_scene = get_task_attr(AUDIO_TASK_CALL_FINAL_ID,
+                     ADSP_TASK_ATTR_RUMTIME) ?
+                     TASK_SCENE_CALL_FINAL : TASK_SCENE_AUDPLAYBACK;
+#else
 	task_scene = mtk_get_speech_status() ?
 		     TASK_SCENE_CALL_FINAL : TASK_SCENE_AUDPLAYBACK;
-
+#endif
 	result = audio_send_ipi_buf_to_dsp(&ipi_msg, task_scene,
 					   AUDIO_DSP_TASK_AURISYS_SET_BUF,
 					   data_buffer, data_size);
@@ -431,9 +515,14 @@ int mtk_spk_recv_ipi_buf_from_dsp(int8_t *buffer,
 	int task_scene;
 
 	memset((void *)&ipi_msg, 0, sizeof(struct ipi_msg_t));
+#ifdef TFADSP_BYPASS_ISSUE_WA
+    task_scene = get_task_attr(AUDIO_TASK_CALL_FINAL_ID,
+                    ADSP_TASK_ATTR_RUMTIME) ?
+                    TASK_SCENE_CALL_FINAL : TASK_SCENE_AUDPLAYBACK;
+#else
 	task_scene = mtk_get_speech_status() ?
 		     TASK_SCENE_CALL_FINAL : TASK_SCENE_AUDPLAYBACK;
-
+#endif
 	result = audio_recv_ipi_buf_from_dsp(&ipi_msg,
 					     task_scene,
 					     AUDIO_DSP_TASK_AURISYS_GET_BUF,
@@ -443,6 +532,7 @@ int mtk_spk_recv_ipi_buf_from_dsp(int8_t *buffer,
 }
 EXPORT_SYMBOL(mtk_spk_recv_ipi_buf_from_dsp);
 
+#ifndef MTK_TFA_STEREO
 static const struct i2c_device_id mtk_spk_i2c_id[] = {
 	{ "tfa98xx", 0},
 	{ "speaker_amp", 0},
@@ -472,6 +562,7 @@ static struct i2c_driver mtk_spk_i2c_driver = {
 };
 
 module_i2c_driver(mtk_spk_i2c_driver);
+#endif /* !MTK_TFA_STEREO */
 
 MODULE_DESCRIPTION("Mediatek speaker amp register driver");
 MODULE_AUTHOR("Shane Chien <shane.chien@mediatek.com>");

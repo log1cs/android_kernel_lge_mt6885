@@ -17,6 +17,7 @@
 #include <mtk_lp_kernfs.h>
 #include <mtk_lp_sysfs.h>
 
+#define MTK_LP_SYSFS_MAX_LINE		(MTK_LP_SYSFS_POWER_BUFFER_SZ)
 #define MTK_LP_SYSFS_POWER_BUFFER_SZ	8192
 
 #define LP_SYSFS_STATUS_INITIAL			0
@@ -43,7 +44,10 @@ static const struct sysfs_ops *mtk_lp_file_ops(struct kernfs_node *kn)
 static int __mtk_lp_kernfs_seq_show(struct seq_file *sf,
 					    struct mtk_lp_kernfs_info *v)
 {
-	if (v && (v->status & LP_SYSFS_STATUS_READY)) {
+	int bRet = 0;
+
+	if (v && (v->status & LP_SYSFS_STATUS_READY)
+	   && (v->status & LP_SYSFS_STATUS_READ_MORE)) {
 		struct kernfs_open_file *of = sf->private;
 		struct kobject *kobj = of->kn->parent->priv;
 
@@ -71,14 +75,13 @@ static int __mtk_lp_kernfs_seq_show(struct seq_file *sf,
 					out_sz = ops->show(kobj, of->kn->priv,
 							   buf);
 			}
+			if (out_sz > MTK_LP_SYSFS_POWER_BUFFER_SZ)
+				out_sz = MTK_LP_SYSFS_POWER_BUFFER_SZ;
 			seq_commit(sf, out_sz);
 		}
-		mutex_lock(&v->locker);
-		v->status &= ~LP_SYSFS_STATUS_READ_MORE;
-		mutex_unlock(&v->locker);
-	}
-
-	return 0;
+	}  else
+		bRet = -ENODATA;
+	return bRet;
 }
 
 void *mtk_lp_kernfs_seq_start(struct seq_file *sf, loff_t *ppos)
@@ -94,7 +97,7 @@ void *mtk_lp_kernfs_seq_start(struct seq_file *sf, loff_t *ppos)
 		if (lp_fs_ctrl) {
 			mutex_init(&lp_fs_ctrl->locker);
 			bRet = (void *)lp_fs_ctrl;
-			lp_fs_ctrl->status = LP_SYSFS_STATUS_READY;
+			lp_fs_ctrl->status = LP_SYSFS_STATUS_READY | LP_SYSFS_STATUS_READ_MORE;
 			bRet = (void *)lp_fs_ctrl;
 		}
 	}
@@ -104,16 +107,18 @@ void *mtk_lp_kernfs_seq_start(struct seq_file *sf, loff_t *ppos)
 
 void *mtk_lp_kernfs_seq_next(struct seq_file *sf, void *v, loff_t *ppos)
 {
-	void *bRet = NULL;
 	struct mtk_lp_kernfs_info *lp =
 		v ?: (struct mtk_lp_kernfs_info *)v;
 
-	*ppos += 1;
+	*ppos += MTK_LP_SYSFS_POWER_BUFFER_SZ;
 
-	if (lp && (lp->status & LP_SYSFS_STATUS_READ_MORE))
-		bRet = v;
+	if (lp && *ppos >= MTK_LP_SYSFS_MAX_LINE) {
+		mutex_lock(&lp->locker);
+		lp->status &= ~LP_SYSFS_STATUS_READ_MORE;
+		mutex_unlock(&lp->locker);
+	}
 
-	return bRet;
+	return v;
 }
 
 static int mtk_lp_kernfs_seq_show(struct seq_file *sf, void *v)
@@ -125,7 +130,6 @@ static int mtk_lp_kernfs_seq_show(struct seq_file *sf, void *v)
 void mtk_lp_kernfs_seq_stop(struct seq_file *sf, void *v)
 {
 	kfree(v);
-	v = NULL;
 }
 
 static ssize_t mtk_lp_kernfs_write(struct kernfs_open_file *of, char *buf,

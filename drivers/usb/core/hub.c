@@ -36,6 +36,10 @@
 #include "hub.h"
 #include "otg_whitelist.h"
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+extern void send_otg_event(enum usb_otg_event event);
+#endif
+
 #define USB_VENDOR_GENESYS_LOGIC		0x05e3
 #define USB_VENDOR_SMSC				0x0424
 #define USB_PRODUCT_USB5534B			0x5534
@@ -1538,14 +1542,29 @@ static int hub_configure(struct usb_hub *hub,
 		int remaining = hdev->bus_mA -
 			hub->descriptor->bHubContrCurrent;
 
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		dev_err(hub_dev, "hub controller current requirement: %dmA\n",
+		#else
 		dev_dbg(hub_dev, "hub controller current requirement: %dmA\n",
+		#endif
 			hub->descriptor->bHubContrCurrent);
 		hub->limited_power = 1;
 
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		dev_err(hub_dev, "remaining:%d maxchild:%d unit_load:%d\n",
+				remaining, maxchild, unit_load);
+		if (remaining < maxchild * unit_load) {
+			send_otg_event(OTG_EVENT_DEV_OVER_CURRENT);
+			dev_warn(hub_dev,
+					"insufficient power available "
+					"to use all downstream ports\n");
+		}
+		#else
 		if (remaining < maxchild * unit_load)
 			dev_warn(hub_dev,
 					"insufficient power available "
 					"to use all downstream ports\n");
+		#endif
 		hub->mA_per_port = unit_load;	/* 7.2.1 */
 
 	} else {	/* Self-powered external hub */
@@ -1786,12 +1805,18 @@ static int hub_probe(struct usb_interface *intf, const struct usb_device_id *id)
 	if (hdev->level == MAX_TOPO_LEVEL) {
 		dev_err(&intf->dev,
 			"Unsupported bus topology: hub nested too deep\n");
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		send_otg_event(OTG_EVENT_MAX_HUB_TIER_EXCEED);
+		#endif
 		return -E2BIG;
 	}
 
 #ifdef	CONFIG_USB_OTG_BLACKLIST_HUB
 	if (hdev->parent) {
 		dev_warn(&intf->dev, "ignoring external hub\n");
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		send_otg_event(OTG_EVENT_HUB_NOT_SUPPORTED);
+		#endif
 		return -ENODEV;
 	}
 #endif
@@ -2250,6 +2275,10 @@ static int usb_enumerate_device_otg(struct usb_device *udev)
 {
 	int err = 0;
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(&udev->dev, "usb_enumerate_device_otg udev %d\n", udev->devnum);
+#endif
+
 #ifdef	CONFIG_USB_OTG
 	/*
 	 * OTG-aware devices on OTG-capable root hubs may be able to use SRP,
@@ -2262,6 +2291,10 @@ static int usb_enumerate_device_otg(struct usb_device *udev)
 		struct usb_otg_descriptor	*desc = NULL;
 		struct usb_bus			*bus = udev->bus;
 		unsigned			port1 = udev->portnum;
+
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		dev_info(&udev->dev, "usb_enumerate_device_otg __usb_get_extra_descriptor %d\n", udev->devnum);
+		#endif
 
 		/* descriptor may appear anywhere in config */
 		err = __usb_get_extra_descriptor(udev->rawdescriptors[0],
@@ -2330,6 +2363,10 @@ static int usb_enumerate_device(struct usb_device *udev)
 	int err;
 	struct usb_hcd *hcd = bus_to_hcd(udev->bus);
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(&udev->dev, "usb_enumerate_device udev %d\n", udev->devnum);
+#endif
+
 	if (udev->config == NULL) {
 		err = usb_get_configuration(udev);
 		if (err < 0) {
@@ -2347,8 +2384,36 @@ static int usb_enumerate_device(struct usb_device *udev)
 	udev->serial = usb_cache_string(udev, udev->descriptor.iSerialNumber);
 
 	err = usb_enumerate_device_otg(udev);
+#if defined(CONFIG_USBIF_COMPLIANCE)
+		if (udev->parent){ // we don't have to check ourself (roothub)
+			if (!is_targeted(udev)) {
+				send_otg_event(OTG_EVENT_DEV_NOT_SUPPORTED);
+				err = -ENOTSUPP;
+			}
+		}
+#endif
+
 	if (err < 0)
 		return err;
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	if (IS_ENABLED(CONFIG_USB_OTG_WHITELIST))
+		dev_info(&udev->dev, "CONFIG_USB_OTG_WHITELIST\n");
+
+	if (hcd->tpl_support)
+		dev_info(&udev->dev, "tpl_support\n");
+
+	if (!is_targeted(udev)) {
+		send_otg_event(OTG_EVENT_DEV_NOT_SUPPORTED);
+		dev_info(&udev->dev, "!is_targeted\n");
+	}
+
+	if (udev->bus->b_hnp_enable)
+		dev_info(&udev->dev, "udev->bus->b_hnp_enable\n");
+
+	if (udev->bus->is_b_host)
+		dev_info(&udev->dev, "udev->bus->is_b_host\n");
+#endif
 
 	if (IS_ENABLED(CONFIG_USB_OTG_WHITELIST) && hcd->tpl_support &&
 		!is_targeted(udev)) {
@@ -2359,12 +2424,19 @@ static int usb_enumerate_device(struct usb_device *udev)
 			|| udev->bus->is_b_host)) {
 			err = usb_port_suspend(udev, PMSG_AUTO_SUSPEND);
 			if (err < 0)
+				#if defined(CONFIG_USBIF_COMPLIANCE)
+				dev_info(&udev->dev, "HNP fail, %d\n", err);
+				#else
 				dev_dbg(&udev->dev, "HNP fail, %d\n", err);
+				#endif
 		}
 		return -ENOTSUPP;
 	}
 
 	usb_detect_interface_quirks(udev);
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(&udev->dev, "usb_enumerate_device err %d\n", err);
+#endif
 
 	return 0;
 }
@@ -2448,6 +2520,10 @@ int usb_new_device(struct usb_device *udev)
 {
 	int err;
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(&udev->dev, "udev %d\n", udev->devnum);
+#endif
+
 	if (udev->parent) {
 		/* Initialize non-root-hub device wakeup to disabled;
 		 * device (un)configuration controls wakeup capable
@@ -2470,7 +2546,11 @@ int usb_new_device(struct usb_device *udev)
 	err = usb_enumerate_device(udev);	/* Read descriptors */
 	if (err < 0)
 		goto fail;
+	#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(&udev->dev, "udev %d, busnum %d, minor = %d\n",
+	#else
 	dev_dbg(&udev->dev, "udev %d, busnum %d, minor = %d\n",
+	#endif
 			udev->devnum, udev->bus->busnum,
 			(((udev->bus->busnum-1) * 128) + (udev->devnum-1)));
 	/* export the usbdev device-node for libusb */
@@ -3187,6 +3267,26 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
 	int		port1 = udev->portnum;
 	int		status;
 	bool		really_suspend = true;
+
+#if defined(CONFIG_USB_MTK_OTG) && defined(CONFIG_USBIF_COMPLIANCE)
+	dev_err(&port_dev->dev, "usb_port_suspend on port %d\n", port1);
+	if (!udev->bus->is_b_host && udev->bus->hnp_support &&
+				udev->portnum == udev->bus->otg_port) {
+		status = usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
+					USB_REQ_SET_FEATURE, 0,
+					USB_DEVICE_B_HNP_ENABLE,
+					0, NULL, 0, USB_CTRL_SET_TIMEOUT);
+		if (status < 0) {
+			send_otg_event(OTG_EVENT_NO_RESP_FOR_HNP_ENABLE);
+			//skip_unsupported = true;
+			dev_err(&udev->dev, "can't enable HNP on port %d, "
+						"status %d\n", port1, status);
+			goto err_wakeup;
+		} else {
+			udev->bus->b_hnp_enable = 1;
+		}
+	}
+#endif
 
 	usb_lock_port(port_dev);
 
@@ -4581,6 +4681,11 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 						retries == 0 &&
 						udev->speed > USB_SPEED_FULL))
 					break;
+				#if defined(CONFIG_USBIF_COMPLIANCE)
+				if (buf->bMaxPacketSize0 == 0 && operations == 0) {
+					send_otg_event(OTG_EVENT_DEV_CONN_TMOUT);
+				}
+				#endif
 			}
 			udev->descriptor.bMaxPacketSize0 =
 					buf->bMaxPacketSize0;
@@ -4604,6 +4709,9 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 			}
 #undef GET_DESCRIPTOR_BUFSIZE
 		}
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		dev_info(&udev->dev, "hub_port_init end of new scheme\n");
+		#endif
 
 		/*
 		 * If device is WUSB, we already assigned an
@@ -4646,6 +4754,9 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 		}
 
 		retval = usb_get_device_descriptor(udev, 8);
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		dev_info(&udev->dev, "device descriptor read/8, info %d\n", retval);
+		#endif
 		if (retval < 8) {
 			if (retval != -ENODEV)
 				dev_err(&udev->dev,
@@ -4723,6 +4834,9 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 		hcd->driver->update_device(hcd, udev);
 	hub_set_initial_usb2_lpm_policy(udev);
 fail:
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	dev_info(&udev->dev, "hub_port_init retval %d\n", retval);
+#endif
 	if (retval) {
 		hub_port_disable(hub, port1, 0);
 		update_devnum(udev, devnum);	/* for disconnect processing */
@@ -4796,9 +4910,15 @@ hub_power_remaining(struct usb_hub *hub)
 		if (delta > hub->mA_per_port)
 			dev_warn(&port_dev->dev, "%dmA is over %umA budget!\n",
 					delta, hub->mA_per_port);
+#if defined(CONFIG_USBIF_COMPLIANCE)
+		send_otg_event(OTG_EVENT_DEV_OVER_CURRENT);
+#endif
 		remaining -= delta;
 	}
 	if (remaining < 0) {
+#if defined(CONFIG_USBIF_COMPLIANCE)
+		send_otg_event(OTG_EVENT_DEV_OVER_CURRENT);
+#endif
 		dev_warn(hub->intfdev, "%dmA over power budget!\n",
 			-remaining);
 		remaining = 0;

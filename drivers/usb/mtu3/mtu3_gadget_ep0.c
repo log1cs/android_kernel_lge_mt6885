@@ -17,6 +17,9 @@
  */
 
 #include "mtu3.h"
+#if defined(CONFIG_USBIF_COMPLIANCE)
+#include "mtu3_hal.h"
+#endif
 
 /* ep0 is always mtu3->in_eps[0] */
 #define	next_ep0_request(mtu)	next_request((mtu)->ep0)
@@ -68,6 +71,9 @@ forward_to_driver(struct mtu3 *mtu, const struct usb_ctrlrequest *setup)
 __releases(mtu->lock)
 __acquires(mtu->lock)
 {
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	int usb_state = 0;
+#endif
 	int ret;
 
 	if (!mtu->gadget_driver || !mtu->softconnect) {
@@ -79,7 +85,19 @@ __acquires(mtu->lock)
 	ret = mtu->gadget_driver->setup(&mtu->g, setup);
 	spin_lock(&mtu->lock);
 
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 	dev_dbg(mtu->dev, "%s ret %d\n", __func__, ret);
+#else
+	if (setup->bRequest == USB_REQ_SET_CONFIGURATION) {
+		if (setup->wValue & 0xff)
+			usb_state = USB_CONFIGURED;
+		else
+			usb_state = USB_UNCONFIGURED;
+		mtu3_sync_with_bat(mtu, usb_state); /* annonce to the battery */
+	}
+
+	dev_info(mtu->dev, "%s ret %d\n", __func__, ret);
+#endif
 	return ret;
 }
 
@@ -276,10 +294,16 @@ static int handle_test_mode(struct mtu3 *mtu, struct usb_ctrlrequest *setup)
 	case TEST_J:
 		dev_dbg(mtu->dev, "TEST_J\n");
 		mtu->test_mode_nr = TEST_J_MODE;
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		ssusb_if_phy_setting(mtu->ssusb);
+		#endif
 		break;
 	case TEST_K:
 		dev_dbg(mtu->dev, "TEST_K\n");
 		mtu->test_mode_nr = TEST_K_MODE;
+		#if defined(CONFIG_USBIF_COMPLIANCE)
+		ssusb_if_phy_setting(mtu->ssusb);
+		#endif
 		break;
 	case TEST_SE0_NAK:
 		dev_dbg(mtu->dev, "TEST_SE0_NAK\n");
@@ -323,7 +347,11 @@ static int ep0_handle_feature_dev(struct mtu3 *mtu,
 {
 	void __iomem *mbase = mtu->mac_base;
 	int handled = -EINVAL;
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 	u32 lpc;
+#else
+	unsigned int tmp;
+#endif
 
 	switch (le16_to_cpu(setup->wValue)) {
 	case USB_DEVICE_REMOTE_WAKEUP:
@@ -345,12 +373,24 @@ static int ep0_handle_feature_dev(struct mtu3 *mtu,
 		if (mtu->ssusb->u1u2_disable)
 			break;
 
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 		lpc = mtu3_readl(mbase, U3D_LINK_POWER_CONTROL);
 		if (set)
 			lpc |= SW_U1_REQUEST_ENABLE;
 		else
 			lpc &= ~SW_U1_REQUEST_ENABLE;
 		mtu3_writel(mbase, U3D_LINK_POWER_CONTROL, lpc);
+#else
+		tmp = (le16_to_cpu(setup->wValue) == USB_DEVICE_U1_ENABLE) ?
+			SW_U1_ACCEPT_ENABLE :
+			SW_U2_ACCEPT_ENABLE;
+
+		if (setup->bRequest == USB_REQ_CLEAR_FEATURE) {
+			mtu3_clrbits(mbase, U3D_LINK_POWER_CONTROL, tmp);
+		} else if (setup->bRequest == USB_REQ_SET_FEATURE) {
+			mtu3_setbits(mbase, U3D_LINK_POWER_CONTROL, tmp);
+		}
+#endif
 
 		mtu->u1_enable = !!set;
 		handled = 1;
@@ -363,12 +403,24 @@ static int ep0_handle_feature_dev(struct mtu3 *mtu,
 		if (mtu->ssusb->u1u2_disable)
 			break;
 
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 		lpc = mtu3_readl(mbase, U3D_LINK_POWER_CONTROL);
 		if (set)
 			lpc |= SW_U2_REQUEST_ENABLE;
 		else
 			lpc &= ~SW_U2_REQUEST_ENABLE;
 		mtu3_writel(mbase, U3D_LINK_POWER_CONTROL, lpc);
+#else
+		tmp = (le16_to_cpu(setup->wValue) == USB_DEVICE_U1_ENABLE) ?
+			SW_U1_ACCEPT_ENABLE :
+			SW_U2_ACCEPT_ENABLE;
+
+		if (setup->bRequest == USB_REQ_CLEAR_FEATURE) {
+			mtu3_clrbits(mbase, U3D_LINK_POWER_CONTROL, tmp);
+		} else if (setup->bRequest == USB_REQ_SET_FEATURE) {
+			mtu3_setbits(mbase, U3D_LINK_POWER_CONTROL, tmp);
+		}
+#endif
 
 		mtu->u2_enable = !!set;
 		handled = 1;

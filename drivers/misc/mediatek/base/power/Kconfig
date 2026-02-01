@@ -125,3 +125,17 @@ config MTK_QOS_V2
 	  It supports BW prediction, BW bound detection, and BW limiter.
 	  It is also mapped with sspm qos v2.
 	  If unsure, say N.
+
+config LGE_PM_MTK_GAME_MODE
+	bool "This is applied to support game mode for mt688x"
+	default n
+	help
+	  This feature is for auto game mode. If set, cpu freq.(or core) will
+	  be limited for user safety
+
+config LGE_PM_TMR
+	bool "Thermal Mitigation Recovery"
+	default n
+	help
+	  This kernel config can be used for boosting when limited by thermal.
+	  If set, cpu freq. will be boosted for performance

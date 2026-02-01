@@ -150,6 +150,14 @@ void mt_usb_disconnect(void)
 #endif
 #endif
 
+	#if defined(CONFIG_LGE_USB) && defined(CONFIG_LGE_PM_WIRELESS_CHARGER)
+	if(g_extcon_info) {
+		if(extcon_get_state(g_extcon_info->edev, EXTCON_USB_HOST)) {
+			pr_info("%s ignore\n", __func__);
+			return;
+		}
+	}
+	#endif
 	pr_info("%s\n", __func__);
 	issue_connection_work(DUAL_PROP_DR_NONE);
 }

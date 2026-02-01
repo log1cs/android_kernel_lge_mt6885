@@ -178,6 +178,22 @@ enum{
 	NVRAM_CACHE_SHARE_MEMORY = 36,
 	SECURITY_SHARE_MEMORY = 37,
 	MD_MEM_AP_VIEW_INF = 38,
+
+/* LGE warning : If you want to add the item(ccci runtime feature),
+   you should modify both Modem(ccci_config_feature_id.h) and Kernel(ccci_modem.h). */
+//PCAS_ONE_BIARY - S
+	MISC_INFO_SIMNUM = 50,
+	MISC_INFO_HWGPIO = 51,
+	MISC_INFO_NTCODE = 52,
+	MISC_INFO_2NTCODE = 53,
+	MISC_INFO_LASTNTCODE = 54,
+	MISC_INFO_2LASTNTCODE = 55,
+	MISC_INFO_GID = 56,
+	MISC_INFO_2GID = 57,
+	MISC_INFO_LASTGID = 58,
+	MISC_INFO_2LASTGID = 59,
+//PCAS_ONE_BIARY - E
+
 	MD_RUNTIME_FEATURE_ID_MAX,
 }; /* MD_CCCI_RUNTIME_FEATURE_ID; */
 

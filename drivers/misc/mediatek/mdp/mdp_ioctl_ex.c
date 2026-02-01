@@ -717,11 +717,14 @@ s32 mdp_ioctl_async_exec(struct file *pf, unsigned long param)
 
 	if (status < 0) {
 		CMDQ_ERR("%s flush fail:%d\n", __func__, status);
+		if (handle) {
 #ifndef MDP_META_IN_LEGACY_V2
-		if (handle->thread != CMDQ_INVALID_THREAD)
-			cmdq_mdp_unlock_thread(handle);
+			if (handle->thread != CMDQ_INVALID_THREAD)
+				cmdq_mdp_unlock_thread(handle);
 #endif
-		cmdq_task_destroy(handle);
+			cmdq_task_destroy(handle);
+		}
+
 		kfree(mapping_job);
 		goto done;
 	}
@@ -758,32 +761,6 @@ done:
 	return status;
 }
 
-#ifdef CONFIG_MTK_CMDQ_MBOX_EXT
-void mdp_check_pending_task(struct mdp_job_mapping *mapping_job)
-{
-	struct cmdqRecStruct *handle = mapping_job->job;
-	u64 cost = div_u64(sched_clock() - handle->submit, 1000);
-	u32 i;
-
-	if (cost <= MDP_TASK_PAENDING_TIME_MAX)
-		return;
-
-	CMDQ_ERR(
-		"%s waiting task cost time:%lluus submit:%llu enging:%#llx caller:%llu-%s\n",
-		__func__,
-		cost, handle->submit, handle->engineFlag,
-		(u64)handle->caller_pid, handle->caller_name);
-
-	/* call core to wait and release task in work queue */
-	cmdq_pkt_auto_release_task(handle, true);
-
-	list_del(&mapping_job->list_entry);
-	for (i = 0; i < mapping_job->handle_count; i++)
-		mdp_ion_free_handle(mapping_job->handles[i]);
-	kfree(mapping_job);
-}
-#endif
-
 s32 mdp_ioctl_async_wait(unsigned long param)
 {
 	struct mdp_wait job_result;
@@ -812,10 +789,6 @@ s32 mdp_ioctl_async_wait(unsigned long param)
 			list_del(&mapping_job->list_entry);
 			break;
 		}
-
-#ifdef CONFIG_MTK_CMDQ_MBOX_EXT
-		mdp_check_pending_task(mapping_job);
-#endif
 	}
 	mutex_unlock(&mdp_job_mapping_list_mutex);
 
@@ -882,7 +855,7 @@ s32 mdp_ioctl_alloc_readback_slots(void *fp, unsigned long param)
 	dma_addr_t paStart = 0;
 	s32 status;
 	u32 free_slot, free_slot_group, alloc_slot_index;
-	u64 exec_cost = sched_clock(), alloc;
+	u64 exec_cost = sched_clock();
 
 	if (copy_from_user(&rb_req, (void *)param, sizeof(rb_req))) {
 		CMDQ_ERR("%s copy_from_user failed\n", __func__);
@@ -900,7 +873,6 @@ s32 mdp_ioctl_alloc_readback_slots(void *fp, unsigned long param)
 		CMDQ_ERR("%s alloc write address failed\n", __func__);
 		return status;
 	}
-	alloc = div_u64(sched_clock() - exec_cost, 1000);
 
 	mutex_lock(&rb_slot_list_mutex);
 	free_slot_group = ffz(alloc_slot_group);
@@ -943,8 +915,8 @@ s32 mdp_ioctl_alloc_readback_slots(void *fp, unsigned long param)
 
 	exec_cost = div_u64(sched_clock() - exec_cost, 1000);
 	if (exec_cost > 10000)
-		CMDQ_LOG("[warn]%s cost:%lluus (%lluus)\n",
-			__func__, exec_cost, alloc);
+		CMDQ_LOG("[warn]%s cost:%lluus\n",
+			__func__, exec_cost);
 
 	return 0;
 }
@@ -1105,8 +1077,7 @@ s32 mdp_ioctl_simulate(unsigned long param)
 	}
 	CMDQ_LOG("simulate instruction size:%u\n", result_size);
 
-	if (!user_job.commands ||
-		copy_to_user((void *)(unsigned long)user_job.commands,
+	if (copy_to_user((void *)(unsigned long)user_job.commands,
 		result_buffer, result_size)) {
 		CMDQ_ERR("%s fail to copy instructions to user\n", __func__);
 		status = -EINVAL;

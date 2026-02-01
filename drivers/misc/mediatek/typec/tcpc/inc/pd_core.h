@@ -1042,6 +1042,10 @@ struct pd_port {
 #endif /* CONFIG_RECV_BAT_ABSENT_NOTIFY */
 
 	uint8_t cap_miss_match; /* For src_cap miss match */
+
+#ifdef CONFIG_LGE_DUAL_SCREEN
+	bool ds3_conn_started;
+#endif
 };
 
 #ifdef CONFIG_USB_PD_ALT_MODE

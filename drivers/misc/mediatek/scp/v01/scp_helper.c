@@ -58,6 +58,14 @@
 #include <mt_emi_api.h>
 #endif
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/delay.h>
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#define SCP_DUMP_WAIT_SEC 90
+#define SCP_DUMP_MIN_WAIT_SEC 40
+#endif
+
 /* scp semaphore timeout count definition */
 #define SEMAPHORE_TIMEOUT 5000
 #define SEMAPHORE_3WAY_TIMEOUT 5000
@@ -1553,6 +1561,27 @@ void scp_sys_reset_ws(struct work_struct *ws)
 			, jiffies_to_msecs(1000)) == 0)
 			pr_debug("[SCP] %s: scp ee time out\n", __func__);
 	}
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	pr_debug("scp_sys_reset_ws : CONFIG_LGE_HANDLE_PANIC in \n");
+
+	if (lge_get_crash_handle_status()) {
+		dump_stack();
+		pr_err("[LGE] scp_sys_reset_ws : scp_helper wait until SCP dump done.\n");
+		msleep(SCP_DUMP_MIN_WAIT_SEC * 1000);
+
+		if (lge_get_scp_dump_status()) {
+			pr_debug("scp_sys_reset_ws : lge_get_scp_dump_status() in \n");
+			emergency_sync();
+			kernel_restart("LGE Reboot by SCP Exception");
+		} else {
+			pr_debug("scp_sys_reset_ws : panic in \n");
+			panic("SCP Crash!!\n");
+		}
+
+		while (1);
+	}
+#endif
 
 	/*disable scp logger
 	 * 0: scp logger disable

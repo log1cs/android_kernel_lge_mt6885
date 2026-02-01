@@ -175,7 +175,11 @@ void kpd_pmic_rstkey_hal(unsigned long pressed)
 		input_report_key(kpd_input_dev, kpd_dts_data.kpd_sw_rstkey,
 			pressed);
 		input_sync(kpd_input_dev);
+#ifdef CONFIG_MACH_LGE
+		kpd_notice(KPD_SAY "(%s) HW keycode =%d using PMIC\n",
+#else
 		kpd_print(KPD_SAY "(%s) HW keycode =%d using PMIC\n",
+#endif
 		       pressed ? "pressed" : "released",
 		       kpd_dts_data.kpd_sw_rstkey);
 	}
@@ -185,7 +189,11 @@ void kpd_pmic_pwrkey_hal(unsigned long pressed)
 {
 	input_report_key(kpd_input_dev, kpd_dts_data.kpd_sw_pwrkey, pressed);
 	input_sync(kpd_input_dev);
+#ifdef CONFIG_MACH_LGE
+	kpd_notice(KPD_SAY "(%s) HW keycode =%d using PMIC\n",
+#else
 	kpd_print(KPD_SAY "(%s) HW keycode =%d using PMIC\n",
+#endif
 	       pressed ? "pressed" : "released", kpd_dts_data.kpd_sw_pwrkey);
 }
 

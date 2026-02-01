@@ -57,8 +57,11 @@
 
 #define DLPT_POWER_OFF_EN
 #define POWEROFF_BAT_CURRENT 3000
+#ifdef CONFIG_LGE_PM
+#define DLPT_POWER_OFF_THD 2
+#else /* MediaTek */
 #define DLPT_POWER_OFF_THD 100
-
+#endif
 #define DLPT_VOLT_MIN 3100
 
 #define BATTERY_MODULE_INIT

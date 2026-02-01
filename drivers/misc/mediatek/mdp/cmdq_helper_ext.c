@@ -82,7 +82,6 @@ static struct cmdq_client *cmdq_entry;
 
 static struct cmdq_base *cmdq_client_base;
 static atomic_t cmdq_thread_usage;
-static atomic_t cmdq_thread_usage_clk;
 
 static wait_queue_head_t *cmdq_wait_queue; /* task done notify */
 static struct ContextStruct cmdq_ctx; /* cmdq driver context */
@@ -1774,6 +1773,20 @@ int cmdqCoreAllocWriteAddress(u32 count, dma_addr_t *paStart,
 			break;
 		}
 
+		/* clear buffer content */
+		do {
+			u32 *pInt = (u32 *) pWriteAddr->va;
+			int i = 0;
+
+			for (i = 0; i < count; ++i) {
+				*(pInt + i) = 0xcdcdabab;
+				/* make sure instructions are really in DRAM */
+				mb();
+				/* make sure instructions are really in DRAM */
+				smp_mb();
+			}
+		} while (0);
+
 		/* assign output pa */
 		*paStart = pWriteAddr->pa;
 
@@ -1857,6 +1870,8 @@ void cmdqCoreReadWriteAddressBatch(u32 *addrs, u32 count, u32 *val_out)
 
 	for (i = 0; i < count; i++) {
 		pa = addrs[i];
+		if (pa == U32_MAX)
+			continue;
 
 		if (!cur_waddr || pa < cur_waddr->pa ||
 			pa >= cur_waddr->pa + cur_waddr->count * sizeof(u32)) {
@@ -2273,7 +2288,6 @@ ssize_t cmdq_core_print_log_level(struct device *dev,
 ssize_t cmdq_core_write_log_level(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	size_t len = 0;
 	int value = 0;
 	int status = 0;
 
@@ -2285,16 +2299,15 @@ ssize_t cmdq_core_write_log_level(struct device *dev,
 			break;
 		}
 
-		len = size;
-		memcpy(textBuf, buf, len);
+		memcpy(textBuf, buf, size);
 
-		textBuf[len] = '\0';
+		textBuf[size] = '\0';
 		if (kstrtoint(textBuf, 10, &value) < 0) {
 			status = -EFAULT;
 			break;
 		}
 
-		status = len;
+		status = size;
 		if (value < 0 || value > CMDQ_LOG_LEVEL_MAX)
 			value = 0;
 
@@ -3384,14 +3397,6 @@ static void cmdq_core_clk_enable(struct cmdqRecStruct *handle)
 	if (clock_count == 1)
 		mdp_lock_wake_lock(true);
 
-	if (!handle->secData.is_secure) {
-		s32 clk_cnt = atomic_inc_return(&cmdq_thread_usage_clk);
-
-		if (clk_cnt == 1)
-			cmdq_mbox_enable(((struct cmdq_client *)
-				handle->pkt->cl)->chan);
-	}
-
 	cmdq_core_group_clk_cb(true, handle->engineFlag, handle->engine_clk);
 }
 
@@ -3400,17 +3405,6 @@ static void cmdq_core_clk_disable(struct cmdqRecStruct *handle)
 	s32 clock_count;
 
 	cmdq_core_group_clk_cb(false, handle->engineFlag, handle->engine_clk);
-
-	if (!handle->secData.is_secure) {
-		s32 clk_cnt = atomic_dec_return(&cmdq_thread_usage_clk);
-
-		if (clk_cnt == 0)
-			cmdq_mbox_disable(((struct cmdq_client *)
-				handle->pkt->cl)->chan);
-		else if (clk_cnt < 0)
-			CMDQ_ERR("disable clock %s error usage:%d\n",
-				__func__, clk_cnt);
-	}
 
 	clock_count = atomic_dec_return(&cmdq_thread_usage);
 
@@ -4104,9 +4098,8 @@ s32 cmdq_pkt_copy_cmd(struct cmdqRecStruct *handle, void *src, const u32 size,
 	}
 
 	exec_cost = div_s64(sched_clock() - exec_cost, 1000);
-	if (exec_cost > 2000)
-		CMDQ_LOG("[warn]%s > 2ms cost:%lluus size:%u\n",
-			__func__, exec_cost, size);
+	if (exec_cost > 1000)
+		CMDQ_LOG("[warn]%s > 1ms cost:%lluus\n", __func__, exec_cost);
 
 	return status;
 }
@@ -4845,12 +4838,9 @@ void cmdq_core_dump_active(void)
 			break;
 
 		CMDQ_LOG(
-			"[warn] waiting task %u cost time:%lluus submit:%llu enging:%#llx thd:%d caller:%llu-%s sec:%s handle:%p\n",
+			"[warn] waiting task %u cost time:%lluus submit:%llu enging:%#llx caller:%llu-%s\n",
 			idx, cost, task->submit, task->engineFlag,
-			task->thread,
-			(u64)task->caller_pid, task->caller_name,
-			task->secData.is_secure ? "true" : "false",
-			task);
+			(u64)task->caller_pid, task->caller_name);
 		idx++;
 	}
 	mutex_unlock(&cmdq_handle_list_mutex);

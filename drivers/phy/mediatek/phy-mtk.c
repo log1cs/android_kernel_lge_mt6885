@@ -225,6 +225,29 @@ int usb_mtkphy_dpdm_pulldown(struct phy *phy, bool enable)
 }
 EXPORT_SYMBOL_GPL(usb_mtkphy_dpdm_pulldown);
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+int usb_mtkphy_if(struct phy *phy)
+{
+	int ret = 0;
+	struct mtk_phy_instance *instance;
+	const struct mtk_phy_interface *phycfg;
+
+	if (!phy)
+		return -EINVAL;
+
+	instance = phy_get_drvdata(phy);
+	phycfg = instance->phycfg;
+
+	if (phycfg && phycfg->usb_phy_if)
+		phycfg->usb_phy_if(instance);
+	else
+		ret = -ENOTSUPP;
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(usb_mtkphy_if);
+#endif
+
 int usb_mtkphy_lpm_enable(struct phy *phy, bool on)
 {
 	int ret = 0;

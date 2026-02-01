@@ -290,6 +290,13 @@ static int pca_pps_authenticate_ta(struct prop_chgalgo_device *pca,
 		    apdo_cap.max_mv < data->vcap_max ||
 		    apdo_cap.ma < data->icap_min)
 			continue;
+#ifdef CONFIG_LGE_PM
+		if (apdo_cap.min_mv >= 5000) {
+			PCA_INFO("min_mv too high(%d >= 5000)\n",
+					apdo_cap.min_mv);
+			continue;
+		}
+#endif
 		if (apdo_idx == -1 || apdo_cap.ma > selected_apdo_cap.ma) {
 			memcpy(&selected_apdo_cap, &apdo_cap,
 			       sizeof(struct tcpm_power_cap_val));

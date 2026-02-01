@@ -39,8 +39,9 @@
 /* switch USB config */
 #include <mt-plat/upmu_common.h>
 #include <mt-plat/mtk_boot.h>
+#include <tcpci_core.h>
 
-#define MT6360_PMU_CHG_DRV_VERSION	"1.0.7_MTK"
+#define MT6360_PMU_CHG_DRV_VERSION	"1.0.8_MTK"
 
 void __attribute__ ((weak)) Charger_Detect_Init(void)
 {
@@ -95,6 +96,9 @@ struct mt6360_pmu_chg_info {
 #else
 	struct work_struct chgdet_work;
 #endif /* CONFIG_TCPC_CLASS */
+#ifdef CONFIG_LGE_PM
+	bool bc12_retry;
+#endif
 
 	struct completion aicc_done;
 	struct completion pumpx_done;
@@ -107,6 +111,9 @@ struct mt6360_pmu_chg_info {
 	struct workqueue_struct *pe_wq;
 	struct work_struct pe_work;
 	u8 ctd_dischg_status;
+#ifdef CONFIG_LGE_PM
+	bool ship_mode_enabled;
+#endif
 };
 
 /* for recive bat oc notify */
@@ -536,6 +543,118 @@ static int mt6360_enable_usbchgen(struct mt6360_pmu_chg_info *mpci, bool en)
 }
 
 #ifdef CONFIG_MT6360_PMU_CHARGER_TYPE_DETECT
+#ifdef MT6360_APPLE_SAMSUNG_TA_SUPPORT
+static inline int mt6360_pmu_reg_test_bit(struct mt6360_pmu_info *mpi,
+					  u8 addr, u8 shift, bool *is_one)
+{
+	int ret = 0;
+	u8 data = 0;
+
+	ret = mt6360_pmu_reg_read(mpi, addr);
+	if (ret < 0) {
+		*is_one = false;
+		return ret;
+	}
+
+	data = ret & (1 << shift);
+	*is_one = (data == 0 ? false : true);
+
+	return 0;
+}
+
+static int mt6360_detect_apple_samsung_ta(struct mt6360_pmu_chg_info *mpci)
+{
+	int ret = 0;
+	bool dp_0_9v = false, dp_1_5v = false, dp_2_3v = false, dm_2_3v = false;
+
+	dev_info(mpci->dev, "%s\n", __func__);
+
+	mt6360_set_usbsw_state(mpci, MT6360_USBSW_CHG);
+
+	/* Check DP > 0.9V */
+	ret = mt6360_pmu_reg_update_bits(
+		mpci->mpi,
+		MT6360_PMU_DPDM_CTRL2,
+		0x0F,
+		0x03
+	);
+
+	ret = mt6360_pmu_reg_test_bit(mpci->mpi, MT6360_PMU_DPDM_CTRL2,
+				      4, &dp_0_9v);
+	if (ret < 0)
+		goto out;
+
+	if (!dp_0_9v) {
+		dev_info(mpci->dev, "%s: DP < 0.9V\n", __func__);
+		goto out;
+	}
+
+	ret = mt6360_pmu_reg_test_bit(mpci->mpi, MT6360_PMU_DPDM_CTRL2,
+				      5, &dp_1_5v);
+	if (ret < 0)
+		goto out;
+
+	/* Samsung charger */
+	if (!dp_1_5v) {
+		dev_info(mpci->dev, "%s: 0.9V < DP < 1.5V\n", __func__);
+		mpci->chg_type = SAMSUNG_CHARGER;
+		goto out;
+	}
+
+	/* Check DP > 2.3 V */
+	ret = mt6360_pmu_reg_update_bits(
+		mpci->mpi,
+		MT6360_PMU_DPDM_CTRL2,
+		0x0F,
+		0x0B
+	);
+
+	ret = mt6360_pmu_reg_test_bit(mpci->mpi, MT6360_PMU_DPDM_CTRL2,
+				      5, &dp_2_3v);
+	if (ret < 0)
+		goto out;
+
+	/* Check DM > 2.3V */
+	ret = mt6360_pmu_reg_update_bits(
+		mpci->mpi,
+		MT6360_PMU_DPDM_CTRL2,
+		0x0F,
+		0x0F
+	);
+
+	ret = mt6360_pmu_reg_test_bit(mpci->mpi, MT6360_PMU_DPDM_CTRL2,
+				      5, &dm_2_3v);
+	if (ret < 0)
+		goto out;
+
+	/* Apple charger */
+	if (!dp_2_3v && !dm_2_3v) {
+		dev_info(mpci->dev, "%s: 1.5V < DP < 2.3V && DM < 2.3V\n",
+			 __func__);
+		mpci->chg_type = APPLE_0_5A_CHARGER;
+	} else if (!dp_2_3v && dm_2_3v) {
+		dev_info(mpci->dev, "%s: 1.5V < DP < 2.3V && 2.3V < DM\n",
+			 __func__);
+		mpci->chg_type = APPLE_1_0A_CHARGER;
+	} else if (dp_2_3v && !dm_2_3v) {
+		dev_info(mpci->dev, "%s: 2.3V < DP && DM < 2.3V\n", __func__);
+		mpci->chg_type = APPLE_2_1A_CHARGER;
+	} else {
+		dev_info(mpci->dev, "%s: 2.3V < DP && 2.3V < DM\n", __func__);
+		mpci->chg_type = APPLE_2_4A_CHARGER;
+	}
+out:
+	ret = mt6360_pmu_reg_update_bits(
+		mpci->mpi,
+		MT6360_PMU_DPDM_CTRL2,
+		0x0F,
+		0x00
+	);
+	mt6360_set_usbsw_state(mpci, MT6360_USBSW_USB);
+	return ret;
+}
+#endif /* MT6360_APPLE_SAMSUNG_TA_SUPPORT */
+
 static int mt6360_chgdet_pre_process(struct mt6360_pmu_chg_info *mpci)
 {
 	int ret = 0;
@@ -558,6 +677,25 @@ static int mt6360_chgdet_pre_process(struct mt6360_pmu_chg_info *mpci)
 				   "%s: set psy online fail\n", __func__);
 		return mt6360_psy_chg_type_changed(mpci);
 	}
+#ifdef MT6360_APPLE_SAMSUNG_TA_SUPPORT
+	if (!attach)
+		goto skip_detect_apple_samsung_ta;
+	mpci->chg_type = CHARGER_UNKNOWN;
+	msleep(150);
+	ret = mt6360_detect_apple_samsung_ta(mpci);
+	if (ret < 0)
+		dev_notice(mpci->dev, "%s: detect apple/samsung ta fail(%d)\n",
+			   __func__, ret);
+	else if (mpci->chg_type != CHARGER_UNKNOWN) {
+		mpci->attach = attach;
+		ret = mt6360_psy_online_changed(mpci);
+		if (ret < 0)
+			dev_notice(mpci->dev, "%s: set psy online fail(%d)\n",
+				   __func__, ret);
+		return mt6360_psy_chg_type_changed(mpci);
+	}
+skip_detect_apple_samsung_ta:
+#endif /* MT6360_APPLE_SAMSUNG_TA_SUPPORT */
 	return __mt6360_enable_usbchgen(mpci, attach);
 }
 
@@ -565,13 +703,18 @@ static int mt6360_chgdet_post_process(struct mt6360_pmu_chg_info *mpci)
 {
 	int ret = 0;
 	bool attach = false, inform_psy = true;
-	u8 usb_status = CHARGER_UNKNOWN;
+	u8 usb_status = MT6360_CHG_TYPE_NOVBUS;
 
 #ifdef CONFIG_TCPC_CLASS
 	attach = mpci->tcpc_attach;
 #else
 	attach = mpci->pwr_rdy;
 #endif /* CONFIG_TCPC_CLASS */
+#ifdef CONFIG_LGE_PM
+	if (attach && mpci->bc12_retry) {
+		dev_info(mpci->dev, "%s: retry done\n", __func__);
+	} else
+#endif
 	if (mpci->attach == attach) {
 		dev_info(mpci->dev, "%s: attach(%d) is the same\n",
 				    __func__, attach);
@@ -606,8 +749,14 @@ static int mt6360_chgdet_post_process(struct mt6360_pmu_chg_info *mpci)
 	case MT6360_CHG_TYPE_DCP:
 		mpci->chg_type = STANDARD_CHARGER;
 		break;
+	default:
+		mpci->chg_type = CHARGER_UNKNOWN;
+		break;
 	}
 out:
+#ifdef CONFIG_LGE_PM
+	mpci->bc12_retry = false;
+#endif
 	if (!attach) {
 		ret = __mt6360_enable_usbchgen(mpci, false);
 		if (ret < 0)
@@ -1077,6 +1226,18 @@ static int mt6360_set_pep20_efficiency_table(struct charger_device *chg_dev)
 	if (!chg_mgr)
 		return -EINVAL;
 
+#ifdef CONFIG_LGE_PM
+	chg_mgr->pe2.profile[0].vchr = 9000000;
+	chg_mgr->pe2.profile[1].vchr = 9000000;
+	chg_mgr->pe2.profile[2].vchr = 9000000;
+	chg_mgr->pe2.profile[3].vchr = 9000000;
+	chg_mgr->pe2.profile[4].vchr = 9000000;
+	chg_mgr->pe2.profile[5].vchr = 9000000;
+	chg_mgr->pe2.profile[6].vchr = 9000000;
+	chg_mgr->pe2.profile[7].vchr = 9000000;
+	chg_mgr->pe2.profile[8].vchr = 9000000;
+	chg_mgr->pe2.profile[9].vchr = 9000000;
+#else /* MediaTek */
 	chg_mgr->pe2.profile[0].vchr = 8000000;
 	chg_mgr->pe2.profile[1].vchr = 8000000;
 	chg_mgr->pe2.profile[2].vchr = 8000000;
@@ -1087,6 +1248,8 @@ static int mt6360_set_pep20_efficiency_table(struct charger_device *chg_dev)
 	chg_mgr->pe2.profile[7].vchr = 9000000;
 	chg_mgr->pe2.profile[8].vchr = 9500000;
 	chg_mgr->pe2.profile[9].vchr = 9500000;
+#endif
+
 	return 0;
 }
 
@@ -1329,14 +1492,43 @@ out:
 	return ret;
 }
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+#define MT6360_MASK_IG_BSTMODE	BIT(0)
+#define MT6360_MASK_HZ_EN	BIT(2)
+#define MT6360_SHFT_HZ_EN	(2)
+#endif
+
 static int mt6360_enable_power_path(struct charger_device *chg_dev,
 					    bool en)
 {
 	struct mt6360_pmu_chg_info *mpci = charger_get_data(chg_dev);
 
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 	dev_dbg(mpci->dev, "%s: en = %d\n", __func__, en);
 	return mt6360_pmu_reg_update_bits(mpci->mpi, MT6360_PMU_CHG_CTRL1,
 					MT6360_MASK_FORCE_SLEEP, en ? 0 : 0xff);
+#else
+	dev_info(mpci->dev, "%s: en = %d\n", __func__, en);
+
+	if(en) {
+		//return mt6360_pmu_reg_update_bits(mpci->mpi, MT6360_PMU_CHG_CTRL1,
+		//				MT6360_MASK_FORCE_SLEEP, en ? 0 : 0xff);
+		/* Set Force VDDM power from Vbat */
+		mt6360_pmu_reg_update_bits(mpci->mpi, MT6360_PMU_CHG_CTRL13,
+				MT6360_MASK_IG_BSTMODE, 0);
+		return mt6360_pmu_reg_update_bits(
+				mpci->mpi, MT6360_PMU_CHG_CTRL1,
+				MT6360_MASK_FORCE_SLEEP | MT6360_MASK_HZ_EN, 0);
+	} else {
+		/* Set Force VDDM power from Vbat */
+		mt6360_pmu_reg_update_bits(mpci->mpi, MT6360_PMU_CHG_CTRL13,
+				MT6360_MASK_IG_BSTMODE, en ? 0 : 0xff);
+		return mt6360_pmu_reg_update_bits(
+				mpci->mpi, MT6360_PMU_CHG_CTRL1,
+				MT6360_MASK_FORCE_SLEEP | MT6360_MASK_HZ_EN,
+				en ? 0 : 0xff);
+	}
+#endif
 }
 
 static int mt6360_is_power_path_enabled(struct charger_device *chg_dev,
@@ -1387,6 +1579,23 @@ static int mt6360_enable_hz(struct charger_device *chg_dev, bool en)
 
 	return ret;
 }
+
+#ifdef CONFIG_LGE_USB
+static u32 mt6360_trans_vobst_sel(u32 uV)
+{
+	return mt6360_trans_sel(uV, 4850000, 25000, 0x38 - 0x11) + 0x11;
+}
+
+static int mt6360_set_otg_voltage(struct charger_device *chg_dev, u32 uV)
+{
+	struct mt6360_pmu_chg_info *mpci = charger_get_data(chg_dev);
+	u32 data = mt6360_trans_vobst_sel(uV);
+
+	return mt6360_pmu_reg_update_bits(mpci->mpi, MT6360_PMU_CHG_CTRL5,
+					  MT6360_MASK_VOBST,
+					  data << MT6360_SHFT_VOBST);
+}
+#endif
 
 static const u32 otg_oc_table[] = {
 	500000, 700000, 1100000, 1300000, 1800000, 2100000, 2400000, 3000000
@@ -1481,6 +1690,7 @@ static int mt6360_enable_chg_type_det(struct charger_device *chg_dev, bool en)
 	int ret = 0;
 #if defined(CONFIG_MT6360_PMU_CHARGER_TYPE_DETECT) && defined(CONFIG_TCPC_CLASS)
 	struct mt6360_pmu_chg_info *mpci = charger_get_data(chg_dev);
+	struct tcpc_device *tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
 
 	dev_info(mpci->dev, "%s\n", __func__);
 	mutex_lock(&mpci->chgdet_lock);
@@ -1490,6 +1700,22 @@ static int mt6360_enable_chg_type_det(struct charger_device *chg_dev, bool en)
 		goto out;
 	}
 	mpci->tcpc_attach = en;
+
+	if (tcpc_dev->pd_wait_pr_swap_complete &&
+			!tcpc_dev->typec_is_attached_src){
+		/*pr_swap to snk, report SDP directly*/
+
+		mpci->attach = mpci->tcpc_attach;
+		mpci->chg_type = STANDARD_HOST;
+		ret = mt6360_psy_online_changed(mpci);
+		if (ret < 0) {
+			dev_err(mpci->dev, "%s: report psy online fail\n", __func__);
+			goto out;
+		}
+		mt6360_psy_chg_type_changed(mpci);
+		goto out;
+	}
+
 	ret = (en ? mt6360_chgdet_pre_process :
 		    mt6360_chgdet_post_process)(mpci);
 out:
@@ -1497,6 +1723,48 @@ out:
 #endif /* CONFIG_MT6360_PMU_CHARGER_TYPE_DETECT && CONFIG_TCPC_CLASS */
 	return ret;
 }
+
+#ifdef CONFIG_LGE_PM
+static int mt6360_retry_chg_type_det(struct charger_device *chg_dev)
+{
+	int ret = 0;
+#ifdef CONFIG_MT6360_PMU_CHARGER_TYPE_DETECT
+	struct mt6360_pmu_chg_info *mpci = charger_get_data(chg_dev);
+
+	dev_info(mpci->dev, "%s\n", __func__);
+	mutex_lock(&mpci->chgdet_lock);
+#ifdef CONFIG_TCPC_CLASS
+	if (!mpci->tcpc_attach)
+		goto out;
+#else
+	if (!mpci->pwr_rdy)
+		goto out;
+#endif
+
+#ifdef MT6360_APPLE_SAMSUNG_TA_SUPPORT
+	ret = mt6360_detect_apple_samsung_ta(mpci);
+	if (ret < 0)
+		dev_notice(mpci->dev, "%s: detect apple/samsung ta fail(%d)\n",
+			   __func__, ret);
+	else if (mpci->chg_type != NONSTANDARD_CHARGER) {
+		ret = mt6360_psy_online_changed(mpci);
+		if (ret < 0)
+			dev_notice(mpci->dev, "%s: set psy online fail(%d)\n",
+				   __func__, ret);
+		mt6360_psy_chg_type_changed(mpci);
+		goto out;
+	}
+#endif /* MT6360_APPLE_SAMSUNG_TA_SUPPORT */
+
+	mpci->bc12_retry = true;
+	__mt6360_enable_usbchgen(mpci, false);
+	__mt6360_enable_usbchgen(mpci, true);
+out:
+	mutex_unlock(&mpci->chgdet_lock);
+#endif /* CONFIG_MT6360_PMU_CHARGER_TYPE_DETECT */
+	return ret;
+}
+#endif
 
 static int mt6360_get_adc(struct charger_device *chg_dev, enum adc_channel chan,
 			  int *min, int *max)
@@ -1875,6 +2143,32 @@ static int mt6360_get_ctd_dischg_status(struct charger_device *chg_dev,
 	return 0;
 }
 
+#ifdef CONFIG_LGE_PM
+static int mt6360_enable_ship_mode(struct charger_device *chg_dev, bool en)
+{
+	struct mt6360_pmu_chg_info *mpci = charger_get_data(chg_dev);
+
+	if (en == mpci->ship_mode_enabled)
+		return 0;
+
+	mpci->ship_mode_enabled = en;
+
+	dev_info(mpci->dev, "%s: ship mode %s\n", __func__,
+			en ? "enabled" : "disabled");
+
+	return 0;
+}
+
+static int mt6360_is_ship_mode_enabled(struct charger_device *chg_dev, bool *en)
+{
+	struct mt6360_pmu_chg_info *mpci = charger_get_data(chg_dev);
+
+	*en = mpci->ship_mode_enabled;
+
+	return 0;
+}
+#endif
+
 static const struct charger_ops mt6360_chg_ops = {
 	/* cable plug in/out */
 	.plug_in = mt6360_plug_in,
@@ -1916,9 +2210,15 @@ static const struct charger_ops mt6360_chg_ops = {
 	/* OTG */
 	.enable_otg = mt6360_enable_otg,
 	.set_boost_current_limit = mt6360_set_otg_current_limit,
+#ifdef CONFIG_LGE_USB
+	.set_boost_voltage = mt6360_set_otg_voltage,
+#endif
 	.enable_discharge = mt6360_enable_discharge,
 	/* Charger type detection */
 	.enable_chg_type_det = mt6360_enable_chg_type_det,
+#ifdef CONFIG_LGE_PM
+	.retry_chg_type_det = mt6360_retry_chg_type_det,
+#endif
 	/* ADC */
 	.get_adc = mt6360_get_adc,
 	.get_vbus_adc = mt6360_get_vbus,
@@ -1944,6 +2244,10 @@ static const struct charger_ops mt6360_chg_ops = {
 	.get_ctd_dischg_status = mt6360_get_ctd_dischg_status,
 	.enable_hidden_mode = mt6360_enable_hidden_mode,
 	.enable_hz = mt6360_enable_hz,
+#ifdef CONFIG_LGE_PM
+	.enable_ship_mode = mt6360_enable_ship_mode,
+	.is_ship_mode_enabled = mt6360_is_ship_mode_enabled,
+#endif
 };
 
 static const struct charger_properties mt6360_chg_props = {
@@ -2452,6 +2756,9 @@ static int mt6360_chg_mivr_task_threadfn(void *data)
 				dev_err(mpci->dev,
 					"%s: toggle cfo fail\n", __func__);
 		}
+#ifdef CONFIG_LGE_PM
+		charger_dev_notify(mpci->chg_dev, CHARGER_DEV_NOTIFY_MIVR);
+#endif
 loop_cont:
 		pm_relax(mpci->dev);
 		atomic_set(&mpci->mivr_cnt, 0);
@@ -2821,6 +3128,10 @@ static int mt6360_pmu_chg_probe(struct platform_device *pdev)
 	mpci->ichg_dis_chg = 2000000;
 	mpci->attach = false;
 	mpci->chg_type = CHARGER_UNKNOWN;
+#ifdef CONFIG_LGE_PM
+	mpci->bc12_retry = false;
+	mpci->ship_mode_enabled = false;
+#endif
 	g_mpci = mpci;
 #if defined(CONFIG_MT6360_PMU_CHARGER_TYPE_DETECT)\
 && !defined(CONFIG_TCPC_CLASS)
@@ -2944,6 +3255,19 @@ static int mt6360_pmu_chg_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_LGE_PM
+static void mt6360_pmu_chg_shutdown(struct platform_device *pdev)
+{
+	struct mt6360_pmu_chg_info *mpci = platform_get_drvdata(pdev);
+
+	if (!mpci->ship_mode_enabled)
+		return;
+
+	dev_info(mpci->dev, "%s: set shipping mode\n", __func__);
+	mt6360_set_shipping_mode(g_mpci);
+}
+#endif
+
 static int __maybe_unused mt6360_pmu_chg_suspend(struct device *dev)
 {
 	return 0;
@@ -2978,6 +3302,9 @@ static struct platform_driver mt6360_pmu_chg_driver = {
 	},
 	.probe = mt6360_pmu_chg_probe,
 	.remove = mt6360_pmu_chg_remove,
+#ifdef CONFIG_LGE_PM
+	.shutdown = mt6360_pmu_chg_shutdown,
+#endif
 	.id_table = mt6360_pmu_chg_id,
 };
 module_platform_driver(mt6360_pmu_chg_driver);
@@ -2989,6 +3316,9 @@ MODULE_VERSION(MT6360_PMU_CHG_DRV_VERSION);
 
 /*
  * Version Note
+ * 1.0.8_MTK
+ * (1) Add MT6360_APPLE_SAMSUNG_TA_SUPPORT config
+ *
  * 1.0.7_MTK
  * (1) Fix Unbalanced enable for MIVR IRQ
  * (2) Sleep 200ms before do another iteration in mt6360_chg_mivr_task_threadfn

@@ -12,11 +12,12 @@
  */
 
 #include <mt-plat/mtk_battery.h>
-#ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
-#include <mt-plat/env.h>
-#endif
-
 #include "ccci_fsm_internal.h"
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
 
 signed int __weak battery_get_bat_voltage(void)
 {
@@ -87,27 +88,6 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 			;
 		ret = 0;
 		break;
-#ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
-	case CCCI_IOC_SIM_LOCK_RANDOM_PATTERN:
-		if (copy_from_user(&val, (void __user *)arg,
-				sizeof(unsigned int)))
-			CCCI_ERROR_LOG(md_id, FSM,
-			"CCCI_IOC_SIM_LOCK_RANDOM_PATTERN: copy_from_user fail\n");
-
-		CCCI_NORMAL_LOG(md_id, FSM,
-			"get SIM lock random pattern %x\n", data);
-
-		ret = snprintf(buffer, sizeof(buffer), "%x", data);
-		if (ret < 0 || ret >= sizeof(buffer)) {
-			CCCI_ERROR_LOG(md_id, FSM,
-				"%s-%d:snprintf fail,ret = %d\n", __func__, __LINE__, ret);
-			ret = -EFAULT;
-			break;
-		}
-		ret = 0;
-		set_env("sml_sync", buffer);
-		break;
-#endif
 	case CCCI_IOC_SET_MD_BOOT_MODE:
 		if (copy_from_user(&data, (void __user *)arg,
 				sizeof(unsigned int))) {
@@ -452,6 +432,25 @@ long ccci_fsm_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 	case CCCI_IOC_MD_RESET:
 		CCCI_NORMAL_LOG(md_id, FSM,
 			"MD reset ioctl called by %s\n", current->comm);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		if (lge_get_crash_handle_status()) {
+			unsigned int modem_status = lge_get_reboot_reason();
+			modem_status &= LGE_CRASH_SYS_MASK;
+
+			if (modem_status == LGE_CRASH_MODEM) {
+				dump_stack();
+				emergency_sync();
+				kernel_restart("LGE Reboot by Modem Exception "
+						"from CCCI_IOC_MD_RESET");
+				/*
+				 * block modem reset to maintain ddr
+				 */
+				while (1) {
+					msleep(10);
+				}
+			}
+		}
+#endif
 		ret = fsm_monitor_send_message(ctl->md_id,
 			CCCI_MD_MSG_RESET_REQUEST, 0);
 		fsm_monitor_send_message(GET_OTHER_MD_ID(ctl->md_id),

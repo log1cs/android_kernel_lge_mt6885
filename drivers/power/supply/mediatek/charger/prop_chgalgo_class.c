@@ -551,6 +551,28 @@ int prop_chgalgo_set_jeita_vbat_cv(struct prop_chgalgo_device *pca, int mV)
 }
 EXPORT_SYMBOL(prop_chgalgo_set_jeita_vbat_cv);
 
+#ifdef CONFIG_LGE_PM
+int prop_chgalgo_set_test_mode(struct prop_chgalgo_device *pca, bool test_mode)
+{
+	if (pca_check_devtype(pca, PCA_DEVTYPE_ALGO) < 0)
+		return -EINVAL;
+	if (!pca->algo_ops->set_test_mode)
+		return -ENOTSUPP;
+	return pca->algo_ops->set_test_mode(pca, test_mode);
+}
+EXPORT_SYMBOL(prop_chgalgo_set_test_mode);
+
+bool prop_chgalgo_is_algo_charging(struct prop_chgalgo_device *pca)
+{
+	if (!pca_check_devtype_bool(pca, PCA_DEVTYPE_ALGO))
+		return false;
+	if (!pca->algo_ops->is_algo_charging)
+		return false;
+	return pca->algo_ops->is_algo_charging(pca);
+}
+EXPORT_SYMBOL(prop_chgalgo_is_algo_charging);
+#endif
+
 /* Class released interface */
 struct prop_chgalgo_device *
 prop_chgalgo_device_register(struct device *parent,

@@ -10,7 +10,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
+#include <linux/leds.h>
 /****************************************************************************
  * LED DRV functions
  ***************************************************************************/
@@ -30,6 +30,13 @@ int setMaxBrightness(char *name, int percent, bool enable);
 
 extern int mtkfb_set_backlight_level(unsigned int level);
 extern void disp_pq_notify_backlight_changed(int bl_1024);
+extern void disp_aal_notify_backlight_changed(int bl_1024);
 extern int enable_met_backlight_tag(void);
 extern int output_met_backlight_tag(int level);
 
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+int lge_get_user_brightness_level(void);
+void lge_set_last_brightness(int brightness);
+int lge_get_last_brightness(void);
+int mt_leds_brightness_set_ex(char *name, int level);
+#endif

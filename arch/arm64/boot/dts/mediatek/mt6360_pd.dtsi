@@ -17,7 +17,7 @@
 		mt-tcpc,name = "type_c_port0"; /* tcpc_device's name */
 		/* 0: SNK Only, 1: SRC Only, 2: DRP, 3: Try.SRC, 4: Try.SNK */
 		mt-tcpc,role_def = <4>;
-		mt-tcpc,rp_level = <1>; /* 0: Default, 1: 1.5, 2: 3.0 */
+		mt-tcpc,rp_level = <0>; /* 0: Default, 1: 1.5, 2: 3.0 */
 		/* 0: Never, 1: Always, 2: EMarkOnly, 3: StartOnly */
 		mt-tcpc,vconn_supply  = <1>;
 #if (CONFIG_MTK_GAUGE_VERSION == 30)

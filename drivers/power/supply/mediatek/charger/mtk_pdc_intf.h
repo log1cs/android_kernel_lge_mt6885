@@ -25,6 +25,11 @@ struct mtk_pdc {
 
 	bool check_impedance;
 	int pd_cap_max_watt;
+#ifdef CONFIG_LGE_PM
+	int pd_cap_max_mv;
+	int pd_cap_max_ma;
+	int pd_cap_max_idx;
+#endif
 	int pd_idx;
 	int pd_reset_idx;
 	int pd_boost_idx;

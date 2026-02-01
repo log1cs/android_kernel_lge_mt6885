@@ -47,6 +47,9 @@ extern void Charger_Detect_Init(void);
 extern void Charger_Detect_Release(void);
 extern void phy_hal_init(struct phy *phy);
 extern void phy_hal_exit(struct phy *phy);
+#if defined(CONFIG_USBIF_COMPLIANCE)
+extern void ssusb_if_phy_setting(struct ssusb_mtk *ssusb);
+#endif
 extern bool ssusb_u3loop_back_test(struct ssusb_mtk *ssusb);
 
 

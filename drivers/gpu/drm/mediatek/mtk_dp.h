@@ -15,7 +15,10 @@
 #define __MTK_DP__H__
 
 #include "mtk_dp_common.h"
-
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+#include <linux/extcon.h>
+#define EXT_DD_MAX_COUNT 3
+#endif
 
 #define DPTX_CheckSinkCap_TimeOutCnt		0x3
 
@@ -286,5 +289,7 @@ void mdrv_DPTx_reAuthentication(struct mtk_dp *mtk_dp);
 void mdrv_DPTx_PatternSet(bool enable, int resolution);
 void mdrv_DPTx_set_maxlinkrate(bool enable, int maxlinkrate);
 extern void mhal_DPTx_VideoClock(bool enable, int resolution);
-
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+void mdrv_DPTx_CheckHDCPVersion(struct mtk_dp *mtk_dp, bool only_hdcp1x);
+#endif
 #endif //__MTK_DP__H__

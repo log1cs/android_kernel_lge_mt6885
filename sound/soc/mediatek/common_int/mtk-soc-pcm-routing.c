@@ -102,11 +102,17 @@ static const char *const DAC_DL_SINEGEN_SAMEPLRATE[] = {
 static int mDac_Sinegen_Amplitude = 6; /* "1/2" */
 static const char *const DAC_DL_SINEGEN_AMPLITUE[] = {
 	"1/128", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1"};
+#if defined(CONFIG_SND_SOC_TFA9874) || defined(CONFIG_SND_SOC_TFA9878)
+static const char *const spk_type_str[] = {"MTK_SPK_NOT_SMARTPA",
+					   "MTK_SPK_RICHTEK_RT5509",
+					   "MTK_SPK_MTK_MT6660",
+					   "MTK_SPK_NXP_TFA98XX"};
+#else
 static const char *const spk_type_str[] = {"MTK_SPK_NOT_SMARTPA",
 					   "MTK_SPK_RICHTEK_RT5509",
 					   "MTK_SPK_TI_TAS5782M",
 					   "MTK_SPK_MTK_MT6660"};
-
+#endif
 static bool mEnableSideToneFilter;
 static const char *const ENABLESTF[] = {"Off", "On"};
 static int stf_gain;
@@ -928,12 +934,8 @@ static int mtk_afe_routing_probe(struct platform_device *pdev)
 {
 	pr_debug("afe_routing_probe\n");
 
-	if (pdev->dev.of_node) {
+	if (pdev->dev.of_node)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_ROUTING_PCM);
-		pdev->name = pdev->dev.kobj.name;
-	} else {
-		pr_debug("%s(), pdev->dev.of_node = NULL!!!\n", __func__);
-	}
 
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
 	return snd_soc_register_platform(&pdev->dev, &mtk_soc_routing_platform);

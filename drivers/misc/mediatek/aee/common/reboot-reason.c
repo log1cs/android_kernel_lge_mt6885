@@ -131,11 +131,33 @@ static ssize_t powerup_reason_show(struct kobject *kobj,
 
 static struct kobj_attribute powerup_reason_attr = __ATTR_RO(powerup_reason);
 
+#ifdef CONFIG_LGE_PM
+static ssize_t powerup_by_smpl_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	char *br_ptr;
+	int smpl = 0;
+
+	br_ptr = strstr(saved_command_line, "androidboot.bootreason=");
+	if (br_ptr == 0)
+		return 0;
+
+	if (!strncmp(br_ptr + 23, "2sec_reboot", strlen("2sec_reboot")))
+		smpl = 1;
+
+	return snprintf(buf, 3, "%d\n", smpl);
+}
+static struct kobj_attribute powerup_by_smpl_attr = __ATTR_RO(powerup_by_smpl);
+#endif
+
 struct kobject *bootinfo_kobj;
 EXPORT_SYMBOL(bootinfo_kobj);
 
 static struct attribute *bootinfo_attrs[] = {
 	&powerup_reason_attr.attr,
+#ifdef CONFIG_LGE_PM
+	&powerup_by_smpl_attr.attr,
+#endif
 	NULL
 };
 

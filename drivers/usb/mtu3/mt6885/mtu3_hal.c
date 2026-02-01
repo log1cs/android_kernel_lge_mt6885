@@ -40,7 +40,9 @@ int get_ssusb_ext_rscs(struct ssusb_mtk *ssusb)
 
 	/* private mode setting */
 	ssusb->force_vbus = true;
+	#if !defined(CONFIG_USBIF_COMPLIANCE)
 	ssusb->u1u2_disable = true;
+	#endif
 	ssusb->u3_loopb_support = true;
 
 	ssusb->priv_data = priv;

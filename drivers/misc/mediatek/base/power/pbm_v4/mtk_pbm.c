@@ -172,7 +172,10 @@ int hpf_get_power_leakage(void)
 	unsigned int leakage_cpu = 0, leakage_gpu = 0;
 
 	leakage_cpu = mt_ppm_get_leakage_mw(TOTAL_CLUSTER_LKG);
-	leakage_gpu = mt_gpufreq_get_leakage_mw();
+#if 0
+	if(!mt_gpufreq_not_ready()){
+	leakage_gpu = mt_gpufreq_get_leakage_mw();}
+#endif
 	hpfmgr->loading_leakage = leakage_cpu + leakage_gpu;
 
 	if (mt_pbm_debug)

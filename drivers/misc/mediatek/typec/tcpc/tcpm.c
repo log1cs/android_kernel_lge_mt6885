@@ -26,6 +26,16 @@
 #endif	/* CONFIG_USB_POWER_DELIVERY */
 
 
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+void tcpm_notify_moisture_detection(struct tcpc_device *tcpc, bool moisture_detected)
+{
+	tcpc->is_mositure_detected = moisture_detected;
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+	dual_role_instance_changed(tcpc->dr_usb);
+#endif /* CONFIG_DUAL_ROLE_USB_INTF */
+}
+#endif
+
 /* Check status */
 static int tcpm_check_typec_attached(struct tcpc_device *tcpc)
 {

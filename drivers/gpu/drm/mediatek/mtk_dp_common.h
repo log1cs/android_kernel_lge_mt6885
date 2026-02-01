@@ -23,7 +23,10 @@
 #include <drm/drm_crtc_helper.h>
 #include "mtk_dp_hdcp.h"
 #include "mtk_dp_debug.h"
-
+#ifdef CONFIG_LGE_DUAL_SCREEN
+#include "./lge/dp/lge_dp_def.h"
+#include <linux/hall_ic.h>
+#endif
 
 #ifndef BYTE
 #define BYTE    unsigned char
@@ -50,7 +53,7 @@
 #define ENABLE_DPTX_SSC_OUTPUT		1
 #define ENABLE_DPTX_FIX_TPS2		0
 #define AUX_WRITE_READ_WAIT_TIME        20 //us
-#define DPTX_SUPPORT_DSC                1
+#define DPTX_SUPPORT_DSC                0
 #define DPTX_PHY_LEVEL_COUNT            10
 #define DPTX_PHY_REG_COUNT              6
 
@@ -90,6 +93,8 @@
 enum DP_ATF_CMD {
 	DP_ATF_DUMP = 0x20,
 	DP_ATF_VIDEO_UNMUTE,
+	DP_ATF_REG_WRITE,
+	DP_ATF_REG_READ,
 	DP_ATF_CMD_COUNT
 };
 
@@ -284,6 +289,10 @@ struct mtk_dp {
 	struct mtk_drm_private *priv;
 	//phy_params[10] = {L0P0,L0P1,L0P2,L0P3,L1P0,L1P1,L1P2,L2P0,L2P1,L3P0};
 	struct DPTX_PHY_PARAMETER phy_params[DPTX_PHY_LEVEL_COUNT];
+#ifdef CONFIG_LGE_DUAL_SCREEN
+	struct lge_dp_display lge_dp;
+	struct hallic_dev *dd_lt;
+#endif
 };
 
 #endif /*__DRTX_TYPE_H__*/

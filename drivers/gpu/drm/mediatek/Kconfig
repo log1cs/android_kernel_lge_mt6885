@@ -57,3 +57,11 @@ config DRM_MTK_DISABLE_AEE_LAYER
 	  if this value is y, will not produce AEE.
 	  if this value is n, will produce AEE.
 	  If you do not produce AEE, please set it to Y in xxx_defconfig.
+
+config CAYMAN_HDMI
+	bool "Enable or disable Cayman HDMI fix"
+	default n
+	help
+	  To enable or disable cayman specific HDMI fix.
+
+source "drivers/gpu/drm/mediatek/lge/Kconfig"

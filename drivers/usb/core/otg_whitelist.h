@@ -21,6 +21,11 @@ static struct usb_device_id whitelist_table[] = {
 /* hubs are optional in OTG, but very handy ... */
 { USB_DEVICE_INFO(USB_CLASS_HUB, 0, 0), },
 { USB_DEVICE_INFO(USB_CLASS_HUB, 0, 1), },
+#ifdef CONFIG_USBIF_COMPLIANCE
+{ USB_DEVICE_INFO(USB_CLASS_MASS_STORAGE, 0, 0), },
+{ USB_DEVICE_INFO(USB_CLASS_HID, 0, 0), },
+{ USB_DEVICE_INFO(0, 0, 0), },
+#endif
 
 #ifdef	CONFIG_USB_PRINTER		/* ignoring nonstatic linkage! */
 /* FIXME actually, printers are NOT supposed to use device classes;
@@ -46,9 +51,24 @@ static struct usb_device_id whitelist_table[] = {
 { }	/* Terminating entry */
 };
 
+#ifdef CONFIG_USBIF_COMPLIANCE
+#define USB_CLASS_ID_HID			3
+#define USB_CLASS_ID_MASS_STORAGE	8
+#define USB_CLASS_ID_HUB			9
+#endif
+
 static int is_targeted(struct usb_device *dev)
 {
 	struct usb_device_id	*id = whitelist_table;
+
+#ifdef CONFIG_USBIF_COMPLIANCE
+	dev_info(&dev->dev, "idVendor %x\n", dev->descriptor.idVendor);
+	dev_info(&dev->dev, "idProduct %x\n", dev->descriptor.idProduct);
+	dev_info(&dev->dev, "bcdDevice %x\n", dev->descriptor.bcdDevice);
+	dev_info(&dev->dev, "bDeviceClass %x\n", dev->descriptor.bDeviceClass);
+	dev_info(&dev->dev, "bDeviceSubClass %x\n", dev->descriptor.bDeviceSubClass);
+	dev_info(&dev->dev, "bDeviceProtocol %x\n",dev->descriptor.bDeviceProtocol);
+#endif
 
 	/* HNP test device is _never_ targeted (see OTG spec 6.6.6) */
 	if ((le16_to_cpu(dev->descriptor.idVendor) == 0x1a0a &&
@@ -60,6 +80,48 @@ static int is_targeted(struct usb_device *dev)
 	     le16_to_cpu(dev->descriptor.idProduct) == 0x0200))
 		return 1;
 
+#if defined(CONFIG_USBIF_COMPLIANCE)
+	/* HUB */
+	if (le16_to_cpu(dev->descriptor.bDeviceClass) == USB_CLASS_ID_HUB){
+		dev_err(&dev->dev, "device v%04x p%04x HUB\n",
+		le16_to_cpu(dev->descriptor.idVendor),
+		le16_to_cpu(dev->descriptor.idProduct));
+		return 1 ;
+	}
+
+	/* HID */
+	if (le16_to_cpu(dev->descriptor.bDeviceClass) == USB_CLASS_ID_HID &&
+		le16_to_cpu(dev->descriptor.bDeviceSubClass) == 0 && le16_to_cpu(dev->descriptor.bDeviceProtocol) == 0) {
+		dev_err(&dev->dev, "device v%04x p%04x HID\n",
+		le16_to_cpu(dev->descriptor.idVendor),
+		le16_to_cpu(dev->descriptor.idProduct));
+		return 1;
+	}
+	/* STORAGE */
+	if (le16_to_cpu(dev->descriptor.bDeviceClass) == USB_CLASS_ID_MASS_STORAGE &&
+		le16_to_cpu(dev->descriptor.bDeviceSubClass) == 0 && le16_to_cpu(dev->descriptor.bDeviceProtocol) == 0) {
+		dev_err(&dev->dev, "device v%04x p%04x STORAGE\n",
+		le16_to_cpu(dev->descriptor.idVendor),
+		le16_to_cpu(dev->descriptor.idProduct));
+		return 1;
+	}
+	/* OTG PET device is always targeted (see OTG 2.0 ECN 6.4.2) */
+	if ((le16_to_cpu(dev->descriptor.idVendor) == 0x1a0a &&
+		 le16_to_cpu(dev->descriptor.idProduct) == 0x0201)) {
+		dev_err(&dev->dev, "device v%04x p%04x PET case 1\n",
+		le16_to_cpu(dev->descriptor.idVendor),
+		le16_to_cpu(dev->descriptor.idProduct));
+		return 0;
+	}
+
+	/* OTG PET device is always targeted (see OTG 2.0 ECN 6.4.2) */
+	if (le16_to_cpu(dev->descriptor.idVendor) == 0x1a0a) {
+		dev_err(&dev->dev, "device v%04x p%04x PET case 2\n",
+		le16_to_cpu(dev->descriptor.idVendor),
+		le16_to_cpu(dev->descriptor.idProduct));
+		return 0;
+	}
+#endif
 	/* NOTE: can't use usb_match_id() since interface caches
 	 * aren't set up yet. this is cut/paste from that code.
 	 */

@@ -33,6 +33,9 @@
 
 #include "xhci.h"
 #include "xhci-mtk.h"
+#if defined(CONFIG_USBIF_COMPLIANCE)
+#include <linux/phy/mediatek/mtk_usb_phy.h>
+#endif
 
 #if IS_ENABLED(CONFIG_MACH_MT6853)
 #include "mtu3_hal.h"
@@ -94,6 +97,17 @@
 #define HOST_CMD_TEST_SE0_NAK       0x3
 #define HOST_CMD_TEST_PACKET        0x4
 #define PMSC_PORT_TEST_CTRL_OFFSET  28
+
+#if defined(CONFIG_USBIF_COMPLIANCE)
+static struct xhci_hcd_mtk *mtk_if;
+static void xhci_mtk_phy_if(struct xhci_hcd_mtk *mtk)
+{
+	unsigned int i;
+
+	for (i = 0; i < mtk->num_phys; i++)
+		usb_mtkphy_if(mtk->phys[i]);
+}
+#endif
 
 /* frmcnt */
 #define INIT_FRMCNT_LEV1_FULL_RANGE 0x944
@@ -192,12 +206,23 @@ static ssize_t xhci_mtk_test_mode_write(struct file *file,
 
 	if (!strncmp(buf, "test packet", 10))
 		test = HOST_CMD_TEST_PACKET;
+#if !defined(CONFIG_USBIF_COMPLIANCE)
 	else if (!strncmp(buf, "test K", 6))
 		test = HOST_CMD_TEST_K;
 	else if (!strncmp(buf, "test J", 6))
 		test = HOST_CMD_TEST_J;
 	else if (!strncmp(buf, "test SE0 NAK", 12))
 		test = HOST_CMD_TEST_SE0_NAK;
+#else
+	else if (!strncmp(buf, "test K", 6)) {
+		test = HOST_CMD_TEST_K;
+		xhci_mtk_phy_if(mtk_if);
+	} else if (!strncmp(buf, "test J", 6)) {
+		test = HOST_CMD_TEST_J;
+		xhci_mtk_phy_if(mtk_if);
+	} else if (!strncmp(buf, "test SE0 NAK", 12))
+		test = HOST_CMD_TEST_SE0_NAK;
+#endif
 
 	if (test) {
 		xhci_info(xhci, "set test mode %d\n", test);
@@ -761,6 +786,7 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	if (usb_disabled())
 		return -ENODEV;
 
+	#ifndef CONFIG_LGE_USB //TD#11604_StorageDetectionFailure_when_rebooted_with_OTG
 	if (of_device_is_compatible(node, "mediatek,mt67xx-xhci")) {
 		ret = device_rename(dev, node->name);
 		if (ret)
@@ -772,6 +798,7 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 			pdev->name = pdev->dev.kobj.name;
 		}
 	}
+	#endif
 
 	driver = &xhci_mtk_hc_driver;
 	mtk = devm_kzalloc(dev, sizeof(*mtk), GFP_KERNEL);
@@ -898,6 +925,10 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 		}
 		mtk->phys[phy_num] = phy;
 	}
+
+	#if defined(CONFIG_USBIF_COMPLIANCE)
+	mtk_if		= mtk;
+	#endif
 
 	ret = xhci_mtk_phy_init(mtk);
 	if (ret)

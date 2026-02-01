@@ -260,6 +260,12 @@ extern void dp_ufp_u_request_enter_mode(
 extern void dp_ufp_u_request_exit_mode(
 	struct pd_port *pd_port, struct svdm_svid_data *svid_data, uint8_t ops);
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+extern bool dp_dfp_u_notify_dp_status_update(struct pd_port *pd_port, bool ack);
+extern bool dp_dfp_u_notify_dp_configuration(struct pd_port *pd_port, bool ack);
+void set_ds3_start(bool hallic_state);
+#endif
+
 #ifdef CONFIG_USB_PD_ALT_MODE_DFP
 extern bool dp_dfp_u_notify_pe_startup(
 	struct pd_port *pd_port, struct svdm_svid_data *svid_data);

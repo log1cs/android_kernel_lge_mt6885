@@ -76,7 +76,7 @@
 #define DIFFERENCE_FULL_CV 1000 /*0.01%*/
 #define PSEUDO1_EN 1
 #define PSEUDO100_EN 1
-#define PSEUDO100_EN_DIS 1
+#define PSEUDO100_EN_DIS 0
 
 #define DIFF_SOC_SETTING 50	/* 0.01% */
 #define DIFF_BAT_TEMP_SETTING 1
@@ -102,7 +102,7 @@
 /* Aging Compensation 1*/
 #define AGING_FACTOR_MIN 90
 #define AGING_FACTOR_DIFF 10
-#define DIFFERENCE_VOLTAGE_UPDATE 30
+#define DIFFERENCE_VOLTAGE_UPDATE 50
 #define AGING_ONE_EN 1
 #define AGING1_UPDATE_SOC 30
 #define AGING1_LOAD_SOC 70
@@ -116,18 +116,18 @@
 
 /* Aging Compensation 3*/
 #define AGING_THIRD_EN 1
-#define AGING_4_EN 1
-#define AGING_5_EN 1
-#define AGING_6_EN 1
+#define AGING_4_EN 0
+#define AGING_5_EN 0
+#define AGING_6_EN 0
 
-#define AGING4_UPDATE_SOC 10
+#define AGING4_UPDATE_SOC 40
 #define AGING4_LOAD_SOC 70
 
 #define AGING5_UPDATE_SOC 30
-#define AGING5_LOAD_SOC 35
+#define AGING5_LOAD_SOC 70
 
 #define AGING6_UPDATE_SOC 30
-#define AGING6_LOAD_SOC 35
+#define AGING6_LOAD_SOC 70
 
 /* threshold */
 #define HWOCV_SWOCV_DIFF	300
@@ -172,9 +172,9 @@
 #define DIFF_IAVG_TH 3000
 
 /* ZCV INTR */
-#define ZCV_SUSPEND_TIME 7
+#define ZCV_SUSPEND_TIME 3
 #define SLEEP_CURRENT_AVG 200 /*0.1mA*/
-#define ZCV_CAR_GAP_PERCENTAGE 1
+#define ZCV_CAR_GAP_PERCENTAGE 5
 
 /* Additional battery table */
 #define ADDITIONAL_BATTERY_TABLE_EN 1
@@ -203,11 +203,12 @@
 #define BATTERY_TMP_TO_ENABLE_NAFG -20
 /* #define GM30_DISABLE_NAFG */
 
-#define POWER_ON_CAR_CHR	5
+#define POWER_ON_CAR_CHR	150
 #define POWER_ON_CAR_NOCHR	-35
 
 #define SHUTDOWN_CAR_RATIO	1
 
+#define MIN_UISOC_AT_KPOC	100 /* 0.01% */
 
 #define MULTI_TEMP_GAUGE0 1	/* different temp using different gauge 0% */
 
@@ -241,39 +242,25 @@
 
 #define UI_FULL_LIMIT_TIME 99999
 
-#define UI_FULL_LIMIT_FC_SOC0 9900
-#define UI_FULL_LIMIT_FC_ITH0 3000
-
-#define UI_FULL_LIMIT_FC_SOC1 9900
-#define UI_FULL_LIMIT_FC_ITH1 3100
-
-#define UI_FULL_LIMIT_FC_SOC2 9900
-#define UI_FULL_LIMIT_FC_ITH2 3200
-
-#define UI_FULL_LIMIT_FC_SOC3 9900
-#define UI_FULL_LIMIT_FC_ITH3 3300
-
-#define UI_FULL_LIMIT_FC_SOC4 9900
-#define UI_FULL_LIMIT_FC_ITH4 3400
 
 /* using voltage to limit uisoc in 1% case */
 /* UI_LOW_LIMIT_VTH0=36000 means 3.6v */
-#define UI_LOW_LIMIT_EN 0
+#define UI_LOW_LIMIT_EN 1
 
 #define UI_LOW_LIMIT_SOC0 200
-#define UI_LOW_LIMIT_VTH0 34500
+#define UI_LOW_LIMIT_VTH0 34000
 
 #define UI_LOW_LIMIT_SOC1 200
-#define UI_LOW_LIMIT_VTH1 34500
+#define UI_LOW_LIMIT_VTH1 34000
 
 #define UI_LOW_LIMIT_SOC2 200
-#define UI_LOW_LIMIT_VTH2 34500
+#define UI_LOW_LIMIT_VTH2 34000
 
 #define UI_LOW_LIMIT_SOC3 200
-#define UI_LOW_LIMIT_VTH3 34500
+#define UI_LOW_LIMIT_VTH3 34000
 
 #define UI_LOW_LIMIT_SOC4 200
-#define UI_LOW_LIMIT_VTH4 34500
+#define UI_LOW_LIMIT_VTH4 34000
 
 #define UI_LOW_LIMIT_TIME 99999
 
