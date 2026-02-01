@@ -168,9 +168,6 @@ struct cmdq {
 	struct cmdq_mmp_event	mmp;
 	void			*init_cmds_base;
 	dma_addr_t		init_cmds;
-	dma_addr_t		dma_pa;
-	u32			*dma_va;
-	s32			gpr[CMDQ_GPR_CNT_ID];
 };
 
 struct gce_plat {
@@ -246,7 +243,6 @@ static inline void cmdq_mmp_init(void)
 	cmdq_mmp.submit = mmprofile_register_event(cmdq_mmp.cmdq, "submit");
 	cmdq_mmp.wait = mmprofile_register_event(cmdq_mmp.cmdq, "wait");
 	cmdq_mmp.warning = mmprofile_register_event(cmdq_mmp.cmdq, "warning");
-	mmprofile_enable_event_recursive(cmdq_mmp.cmdq, 1);
 	mmprofile_start(1);
 #endif
 }
@@ -333,10 +329,7 @@ static void cmdq_clk_disable(struct cmdq *cmdq)
 
 	usage = atomic_dec_return(&cmdq->usage);
 
-	if (usage == -1)
-		cmdq_util_aee("CMDQ", "%s cmdq:%pa suspend:%d usage:%d",
-			__func__, &cmdq->base_pa, cmdq->suspended, usage);
-	else if (usage < 0) {
+	if (usage < 0) {
 		/* print error but still try close */
 		cmdq_err("ref count error after dec:%d suspend:%s",
 			usage, cmdq->suspended ? "true" : "false");
@@ -624,7 +617,6 @@ void cmdq_init_cmds(void *dev_cmdq)
 	struct cmdq *cmdq = dev_cmdq;
 	struct cmdq_thread *thread = &cmdq->thread[0];
 	dma_addr_t pc, end;
-	int i;
 
 	cmdq_trace_ex_begin("%s", __func__);
 
@@ -642,13 +634,6 @@ void cmdq_init_cmds(void *dev_cmdq)
 		cmdq_err("clear event instructions timeout pc:%#lx end:%#lx",
 			(unsigned long)pc,
 			(unsigned long)end);
-		for (i = 0; i < ARRAY_SIZE(cmdq->thread); i++)
-			if (cmdq->thread->chan) {
-				cmdq_err("%s cmdq:%d thread:%d i:%d",
-					__func__, cmdq->hwid, thread->idx, i);
-				cmdq_util_dump_dbg_reg(cmdq->thread->chan);
-				break;
-			}
 		cmdq_thread_reset(cmdq, thread);
 	}
 	writel(CMDQ_THR_DISABLED, thread->base + CMDQ_THR_ENABLE_TASK);
@@ -962,29 +947,15 @@ static irqreturn_t cmdq_irq_handler(int irq, void *dev)
 {
 	struct cmdq *cmdq = dev;
 	unsigned long irq_status, flags = 0L;
-	int bit, i;
+	int bit;
 	bool secure_irq = false;
 	struct cmdq_task *task, *tmp;
 	struct list_head removes;
 
-	if (atomic_read(&cmdq->usage) == -1)
-		cmdq_util_aee("CMDQ", "%s irq:%d cmdq:%pa suspend:%d usage:%d",
-			__func__, irq, &cmdq->base_pa, cmdq->suspended,
-			atomic_read(&cmdq->usage));
-
 	if (atomic_read(&cmdq->usage) <= 0) {
-		if (cmdq->suspended)
-			return IRQ_HANDLED;
-
-		cmdq_clk_enable(cmdq);
-		cmdq_thread_dump_all(cmdq);
-
-		for (i = 0; i < ARRAY_SIZE(cmdq->thread); i++)
-			if (cmdq->thread[i].chan) {
-				cmdq_dump_core(cmdq->thread[i].chan);
-				break;
-			}
-		cmdq_clk_disable(cmdq);
+		cmdq_msg("%s cmdq:%#lx suspend:%s",
+			__func__, (unsigned long)cmdq->base_pa,
+			cmdq->suspended ? "true" : "false");
 		return IRQ_HANDLED;
 	}
 
@@ -1205,92 +1176,6 @@ void cmdq_dump_core(struct mbox_chan *chan)
 }
 EXPORT_SYMBOL(cmdq_dump_core);
 
-void cmdq_pkt_poll_gpr_check(
-	struct cmdq_pkt *pkt, const u16 gpr_idx, const s32 start)
-{
-#if IS_ENABLED(CONFIG_MACH_MT6885)
-	struct cmdq_client *client;
-	struct cmdq_thread *thread;
-	struct cmdq *cmdq;
-
-	if (gpr_idx >= CMDQ_GPR_CNT_ID) {
-		cmdq_msg("%s:invalid gpr_idx pkt:%p gpr_idx:%u start:%d",
-			__func__, pkt, gpr_idx, start);
-		return;
-	}
-
-	if (!pkt->cl) {
-		cmdq_msg("%s:invalid client pkt:%p gpr_idx:%u start:%d",
-			__func__, pkt, gpr_idx, start);
-		return;
-	}
-	client = (struct cmdq_client *)pkt->cl;
-
-	if (!client->chan->con_priv) {
-		cmdq_msg("%s:invalid thread pkt:%p gpr_idx:%u start:%d",
-			__func__, pkt, gpr_idx, start);
-		return;
-	}
-	thread = (struct cmdq_thread *)client->chan->con_priv;
-	cmdq = container_of(thread->chan->mbox, struct cmdq, mbox);
-
-	/* check */
-	if (cmdq->gpr[gpr_idx] >= 0 && cmdq->gpr[gpr_idx] != thread->idx) {
-		cmdq_err("pkt:%p gpr_idx:%u start:%d thread:%d:%d not same",
-			pkt, gpr_idx, start, cmdq->gpr[gpr_idx], thread->idx);
-		cmdq_util_aee(
-			cmdq_thread_module_dispatch(cmdq->base_pa, thread->idx),
-			"pkt:%p gpr_idx:%u start:%d thread:%d:%d not same",
-			pkt, gpr_idx, start, cmdq->gpr[gpr_idx], thread->idx);
-		return;
-	}
-
-	cmdq_log("pkt:%p gpr_idx:%u start:%d thread:%d:%d",
-		pkt, gpr_idx, start, cmdq->gpr[gpr_idx], thread->idx);
-	cmdq->gpr[gpr_idx] = thread->idx;
-
-	if (start < 0)
-		return;
-
-	cmdq_pkt_write_indriect(pkt, NULL,
-		cmdq->dma_pa + gpr_idx * 8 * 4 + start,
-		CMDQ_GPR_CNT_ID + gpr_idx, ~0);
-	cmdq_pkt_write_indriect(pkt, NULL,
-		cmdq->dma_pa + gpr_idx * 8 * 4 + start + 4,
-		CMDQ_TPR_ID, ~0);
-	cmdq_pkt_write_indriect(pkt, NULL,
-		cmdq->dma_pa + gpr_idx * 8 * 4 + start + 8,
-		CMDQ_CPR_TPR_MASK, ~0);
-	cmdq_pkt_mem_move(pkt, NULL, cmdq->base_pa + CMDQ_TPR_TIMEOUT_EN,
-		cmdq->dma_pa + gpr_idx * 8 * 4 + start + 12,
-		CMDQ_THR_SPR_IDX2);
-#endif
-}
-EXPORT_SYMBOL(cmdq_pkt_poll_gpr_check);
-
-static void cmdq_thread_dump_gpr(struct cmdq *cmdq)
-{
-#if IS_ENABLED(CONFIG_MACH_MT6885)
-	s32 i;
-
-	for (i = 0; i < ARRAY_SIZE(cmdq->gpr); i++) {
-		if (cmdq->gpr[i] == -1)
-			continue;
-		cmdq_util_msg(
-			"gpr:%02d thrd:%02d dma:%#10x %#10x %#10x %#10x %#10x %#10x %#10x %#10x",
-			i, cmdq->gpr[i],
-			readl(cmdq->dma_va + i * 8),
-			readl(cmdq->dma_va + i * 8 + 1),
-			readl(cmdq->dma_va + i * 8 + 2),
-			readl(cmdq->dma_va + i * 8 + 3),
-			readl(cmdq->dma_va + i * 8 + 4),
-			readl(cmdq->dma_va + i * 8 + 5),
-			readl(cmdq->dma_va + i * 8 + 6),
-			readl(cmdq->dma_va + i * 8 + 7));
-	}
-#endif
-}
-
 void cmdq_thread_dump_spr(struct cmdq_thread *thread)
 {
 	struct cmdq *cmdq = container_of(thread->chan->mbox, struct cmdq, mbox);
@@ -1312,8 +1197,6 @@ void cmdq_thread_dump_spr(struct cmdq_thread *thread)
 		&cmdq->base_pa, gpr[0], gpr[1], gpr[2], gpr[3], gpr[4], gpr[5],
 		gpr[6], gpr[7], gpr[8], gpr[9], gpr[10], gpr[11], gpr[12],
 		gpr[13], gpr[14], gpr[15]);
-
-	cmdq_thread_dump_gpr(cmdq);
 }
 EXPORT_SYMBOL(cmdq_thread_dump_spr);
 
@@ -1950,11 +1833,6 @@ static int cmdq_probe(struct platform_device *pdev)
 	cmdq->mbox.txdone_irq = false;
 	cmdq->mbox.txdone_poll = false;
 
-	cmdq->dma_va = cmdq_mbox_buf_alloc(dev, &cmdq->dma_pa);
-	if (!cmdq->dma_va || !cmdq->dma_pa)
-		cmdq_err("cmdq_mbox_buf_alloc failed");
-	for (i = 0; i < ARRAY_SIZE(cmdq->gpr); i++)
-		cmdq->gpr[i] = -1;
 
 	for (i = 0; i < ARRAY_SIZE(cmdq->thread); i++) {
 		cmdq->thread[i].base = cmdq->base + CMDQ_THR_BASE +
