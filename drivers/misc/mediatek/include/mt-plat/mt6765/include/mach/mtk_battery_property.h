@@ -18,10 +18,10 @@
 #define DIFFERENCE_FULLOCV_ITH	200	/* mA */
 #define MTK_CHR_EXIST 1
 #define KEEP_100_PERCENT 1
-#define R_FG_VALUE	5				/* mOhm */
+#define R_FG_VALUE	10				/* mOhm */
 #define EMBEDDED_SEL 0
 #define PMIC_SHUTDOWN_CURRENT 20	/* 0.01 mA */
-#define FG_METER_RESISTANCE	100
+#define FG_METER_RESISTANCE	75
 #define CAR_TUNE_VALUE	100 /*1.00 */
 #define NO_BAT_TEMP_COMPENSATE 0
 /* NO_BAT_TEMP_COMPENSATE 1 = don't need bat_temper compensate, */
@@ -35,7 +35,7 @@
 /* define Xmins to shutdown*/
 #define SHUTDOWN_1_TIME	5
 
-#define SHUTDOWN_GAUGE1_VBAT_EN 0
+#define SHUTDOWN_GAUGE1_VBAT_EN 1
 #define SHUTDOWN_GAUGE1_VBAT 34000
 
 #define SHUTDOWN_GAUGE0_VOLTAGE 34000
@@ -76,7 +76,7 @@
 #define DIFFERENCE_FULL_CV 1000 /*0.01%*/
 #define PSEUDO1_EN 1
 #define PSEUDO100_EN 1
-#define PSEUDO100_EN_DIS 0
+#define PSEUDO100_EN_DIS 1
 
 #define DIFF_SOC_SETTING 50	/* 0.01% */
 #define DIFF_BAT_TEMP_SETTING 1
@@ -100,7 +100,7 @@
 #define CALI_CAR_TUNE_AVG_NUM	60
 
 /* Aging Compensation 1*/
-#define AGING_FACTOR_MIN 90
+#define AGING_FACTOR_MIN 75
 #define AGING_FACTOR_DIFF 10
 #define DIFFERENCE_VOLTAGE_UPDATE 50
 #define AGING_ONE_EN 1
@@ -116,9 +116,9 @@
 
 /* Aging Compensation 3*/
 #define AGING_THIRD_EN 1
-#define AGING_4_EN 0
-#define AGING_5_EN 0
-#define AGING_6_EN 0
+#define AGING_4_EN 1
+#define AGING_5_EN 1
+#define AGING_6_EN 1
 
 #define AGING4_UPDATE_SOC 40
 #define AGING4_LOAD_SOC 70
@@ -172,7 +172,7 @@
 #define DIFF_IAVG_TH 3000
 
 /* ZCV INTR */
-#define ZCV_SUSPEND_TIME 3
+#define ZCV_SUSPEND_TIME 29
 #define SLEEP_CURRENT_AVG 200 /*0.1mA*/
 #define ZCV_CAR_GAP_PERCENTAGE 5
 
@@ -203,7 +203,7 @@
 #define BATTERY_TMP_TO_ENABLE_NAFG -20
 /* #define GM30_DISABLE_NAFG */
 
-#define POWER_ON_CAR_CHR	150
+#define POWER_ON_CAR_CHR	5
 #define POWER_ON_CAR_NOCHR	-35
 
 #define SHUTDOWN_CAR_RATIO	1
@@ -248,24 +248,23 @@
 #define UI_LOW_LIMIT_EN 1
 
 #define UI_LOW_LIMIT_SOC0 200
-#define UI_LOW_LIMIT_VTH0 34000
+#define UI_LOW_LIMIT_VTH0 34500
 
 #define UI_LOW_LIMIT_SOC1 200
-#define UI_LOW_LIMIT_VTH1 34000
+#define UI_LOW_LIMIT_VTH1 34500
 
 #define UI_LOW_LIMIT_SOC2 200
-#define UI_LOW_LIMIT_VTH2 34000
+#define UI_LOW_LIMIT_VTH2 34500
 
 #define UI_LOW_LIMIT_SOC3 200
-#define UI_LOW_LIMIT_VTH3 34000
+#define UI_LOW_LIMIT_VTH3 34500
 
 #define UI_LOW_LIMIT_SOC4 200
-#define UI_LOW_LIMIT_VTH4 34000
+#define UI_LOW_LIMIT_VTH4 34500
 
 #define UI_LOW_LIMIT_TIME 99999
 
 #define MOVING_BATTEMP_EN 1
 #define MOVING_BATTEMP_THR 20
-
 
 #endif

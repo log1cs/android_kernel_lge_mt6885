@@ -163,6 +163,10 @@ struct prop_chgalgo_algo_ops {
 	int (*set_jeita_vbat_cv)(struct prop_chgalgo_device *pca, int mV);
 	int (*notifier_call)(struct prop_chgalgo_device *pca,
 			     struct prop_chgalgo_notify *notify);
+#ifdef CONFIG_LGE_PM
+	int (*set_test_mode)(struct prop_chgalgo_device *pca, bool test_mode);
+	bool (*is_algo_charging)(struct prop_chgalgo_device *pca);
+#endif
 };
 
 enum prop_chgalgo_dev_type {
@@ -287,6 +291,11 @@ extern int prop_chgalgo_thermal_throttling(struct prop_chgalgo_device *pca,
 					   int mA);
 extern int prop_chgalgo_set_jeita_vbat_cv(struct prop_chgalgo_device *pca,
 					  int mV);
+#ifdef CONFIG_LGE_PM
+extern int prop_chgalgo_set_test_mode(struct prop_chgalgo_device *pca,
+				      bool test_mode);
+extern bool prop_chgalgo_is_algo_charging(struct prop_chgalgo_device *pca);
+#endif
 #else
 static inline int prop_chgalgo_init_algo(struct prop_chgalgo_device *pca)
 {
@@ -336,5 +345,18 @@ prop_chgalgo_set_jeita_vbat_cv(struct prop_chgalgo_device *pca, int mV)
 {
 	return -ENOTSUPP;
 }
+
+#ifdef CONFIG_LGE_PM
+static inline int
+prop_chgalgo_set_test_mode(struct prop_chgalgo_device *pca, bool test_mode)
+{
+	return -ENOTSUPP;
+}
+
+static inline bool prop_chgalgo_is_algo_charging(struct prop_chgalgo_device *pca)
+{
+	return false;
+}
+#endif
 #endif /* CONFIG_RT_PROP_CHGALGO */
 #endif /* __LINUX_PROP_CHGALGO_CLASS_H */

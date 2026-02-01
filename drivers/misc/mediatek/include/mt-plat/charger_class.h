@@ -52,6 +52,29 @@ struct charger_device {
 	bool is_polling_mode;
 };
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+enum chg_stat {
+	WLESS_CHG_STAT_EPP,
+	WLESS_CHG_STAT_LP_EPP,
+	WLESS_CHG_STAT_CALI,
+	WLESS_CHG_STAT_EPT,
+	CHG_STAT_MAX,
+};
+
+enum ept_stat {
+	WLESS_EPT_UNKNOWN,
+	WLESS_EPT_EOC,
+	WLESS_EPT_INTERNAL_FAULT,
+	WLESS_EPT_OVER_TEMPERATURE,
+	WLESS_EPT_OVER_VOLTAGE,
+	WLESS_EPT_OVER_CURRENT,
+	WLESS_EPT_BATTERY_FAIL,
+	WLESS_EPT_RECONFIGURATION,
+	WLESS_EPT_NO_RESPONSE,
+	EPT_STAT_MAX,
+};
+#endif
+
 struct charger_ops {
 	int (*suspend)(struct charger_device *dev, pm_message_t state);
 	int (*resume)(struct charger_device *dev);
@@ -137,9 +160,15 @@ struct charger_ops {
 	int (*enable_otg)(struct charger_device *dev, bool en);
 	int (*enable_discharge)(struct charger_device *dev, bool en);
 	int (*set_boost_current_limit)(struct charger_device *dev, u32 uA);
+#ifdef CONFIG_LGE_USB
+	int (*set_boost_voltage)(struct charger_device *dev, u32 uV);
+#endif
 
 	/* charger type detection */
 	int (*enable_chg_type_det)(struct charger_device *dev, bool en);
+#ifdef CONFIG_LGE_PM
+	int (*retry_chg_type_det)(struct charger_device *dev);
+#endif
 
 	/* run AICL */
 	int (*run_aicl)(struct charger_device *dev, u32 *uA);
@@ -175,6 +204,19 @@ struct charger_ops {
 	int (*enable_hz)(struct charger_device *dev, bool en);
 
 	int (*enable_bleed_discharge)(struct charger_device *dev, bool en);
+
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	int (*get_status)(struct charger_device *chg_dev, enum chg_stat status,
+		u32 *val);
+	int (*set_status)(struct charger_device *chg_dev, enum chg_stat status,
+		u32 val);
+	int (*get_power)(struct charger_device *dev, int *uW);
+#endif
+
+#ifdef CONFIG_LGE_PM
+	int (*enable_ship_mode)(struct charger_device *dev, bool en);
+	int (*is_ship_mode_enabled)(struct charger_device *dev, bool *en);
+#endif
 };
 
 static inline void *charger_dev_get_drvdata(
@@ -258,12 +300,20 @@ extern int charger_dev_enable_safety_timer(
 	struct charger_device *charger_dev, bool en);
 extern int charger_dev_enable_chg_type_det(
 	struct charger_device *charger_dev, bool en);
+#ifdef CONFIG_LGE_PM
+extern int charger_dev_retry_chg_type_det(
+	struct charger_device *charger_dev);
+#endif
 extern int charger_dev_enable_otg(
 	struct charger_device *charger_dev, bool en);
 extern int charger_dev_enable_discharge(
 	struct charger_device *charger_dev, bool en);
 extern int charger_dev_set_boost_current_limit(
 	struct charger_device *charger_dev, u32 uA);
+#ifdef CONFIG_LGE_USB
+extern int charger_dev_set_boost_voltage(
+	struct charger_device *charger_dev, u32 uV);
+#endif
 extern int charger_dev_get_zcv(
 	struct charger_device *charger_dev, u32 *uV);
 extern int charger_dev_run_aicl(
@@ -331,6 +381,15 @@ extern int charger_dev_is_direct_charging_vbuslowerr(
 extern int charger_dev_init_direct_charging_chip(
 	struct charger_device *charger_dev);
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+extern int charger_dev_get_status(
+	struct charger_device *chg_dev, enum chg_stat status, u32 *val);
+extern int charger_dev_set_status(
+	struct charger_device *chg_dev, enum chg_stat status, u32 val);
+extern int charger_dev_get_power(
+	struct charger_device *chg_dev, int *uW);
+#endif
+
 /* TypeC */
 extern int charger_dev_enable_usbid(struct charger_device *dev, bool en);
 extern int charger_dev_set_usbid_rup(struct charger_device *dev, u32 rup);
@@ -349,6 +408,13 @@ extern int charger_dev_enable_bleed_discharge(struct charger_device *dev,
 /* For buck1 FPWM */
 extern int charger_dev_enable_hidden_mode(struct charger_device *dev, bool en);
 
+#ifdef CONFIG_LGE_PM
+extern int charger_dev_enable_ship_mode(
+	struct charger_device *charger_dev, bool en);
+extern int charger_dev_is_ship_mode_enabled(
+	struct charger_device *charger_dev, bool *en);
+#endif
+
 extern int register_charger_device_notifier(
 	struct charger_device *charger_dev,
 			      struct notifier_block *nb);
@@ -358,5 +424,8 @@ extern int unregister_charger_device_notifier(
 extern int charger_dev_notify(
 	struct charger_device *charger_dev, int event);
 
+#ifdef CONFIG_LGE_USB
+extern void control_otg_en(bool en);
+#endif
 
 #endif /*LINUX_POWER_CHARGER_CLASS_H*/

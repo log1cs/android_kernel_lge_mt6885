@@ -195,7 +195,9 @@ int g_temperature[MAX_TABLE] = {
 	-45/*TEMPERATURE_T9*/
 };
 
-
+#ifdef CONFIG_LGE_PM_BATTERY_NTC_TUNED
+#include <custom_battery_table.h>
+#else /* MediaTek */
 #define BAT_NTC_10 1
 #define BAT_NTC_47 0
 
@@ -262,7 +264,7 @@ struct FUELGAUGE_TEMPERATURE Fg_Temperature_Table[21] = {
 		{60, 11210}
 };
 #endif
-
+#endif /* CONFIG_LGE_PM_BATTERY_NTC_TUNED */
 
 
 /* ============================================================
