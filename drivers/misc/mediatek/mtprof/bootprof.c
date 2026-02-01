@@ -25,6 +25,9 @@
 
 #include "internal.h"
 #include "mtk_sched_mon.h"
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
 
 #define BOOT_STR_SIZE 256
 #define BUF_COUNT 12
@@ -111,6 +114,21 @@ void log_boot(char *str)
 
 	memcpy(p->comm_event, current->comm, TASK_COMM_LEN);
 	memcpy(p->comm_event + TASK_COMM_LEN, str, n - TASK_COMM_LEN);
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+{
+	char buf[BOOT_STR_SIZE] = {0,};
+
+#define FMT "%10lld.%06ld :%5d-%-16s: %s\n"
+
+	sprintf(buf, FMT, msec_high(p->timestamp),
+				msec_low(p->timestamp),
+				p->pid, p->comm_event, p->comm_event + TASK_COMM_LEN
+			);
+	lge_set_bootprof(buf);
+}
+#endif
+
 	log_count++;
 out:
 	mutex_unlock(&bootprof_lock);
