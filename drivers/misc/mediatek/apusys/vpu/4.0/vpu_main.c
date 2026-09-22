@@ -108,9 +108,9 @@ static int vpu_req_check(struct apusys_cmd_hnd *cmd, struct vpu_request *req)
 	}
 
 	mask = ~(VPU_REQ_F_ALG_RELOAD |
-		VPU_REQ_F_ALG_CUSTOM |
-		VPU_REQ_F_ALG_PRELOAD |
-		VPU_REQ_F_PREEMPT_TEST);
+			VPU_REQ_F_ALG_CUSTOM |
+			VPU_REQ_F_ALG_PRELOAD |
+			VPU_REQ_F_PREEMPT_TEST);
 
 	if (req->flags & mask) {
 		pr_info("%s: invalid flags 0x%llx of vpu request\n",
@@ -521,7 +521,7 @@ static int vpu_init_bin(void)
 #endif
 
 	/* map vpu firmware to kernel virtual address */
-	vpu_drv->bin_va = ioremap_wc(phy_addr, phy_size);
+	vpu_drv->bin_va = vpu_vmap(phy_addr, phy_size, 0);
 	vpu_drv->bin_pa = phy_addr;
 	vpu_drv->bin_size = phy_size;
 
