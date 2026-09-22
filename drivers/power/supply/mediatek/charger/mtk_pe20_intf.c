@@ -232,7 +232,12 @@ static int pe20_set_ta_vchr(struct charger_manager *pinfo, u32 chr_volt)
 	int ret = 0;
 	int vchr_before, vchr_after, vchr_delta;
 	const u32 sw_retry_cnt_max = 3;
+#ifdef CONFIG_LGE_PM
+	/* Reduce retry_cnt_max for time getting TTF current */
+	const u32 retry_cnt_max = 2;
+#else /* Mediatek */
 	const u32 retry_cnt_max = 5;
+#endif
 	u32 sw_retry_cnt = 0, retry_cnt = 0;
 	struct mtk_pe20 *pe20 = &pinfo->pe2;
 
@@ -291,6 +296,15 @@ static void mtk_pe20_check_cable_impedance(struct charger_manager *pinfo)
 
 	chr_debug("%s: starts\n", __func__);
 
+#ifdef CONFIG_LGE_PM
+	if (pe20->vbat_orig > pinfo->data.vbat_cable_imp_threshold) {
+		chr_err("VBAT > %dmV, directly set aicr to %dmA\n",
+			pinfo->data.vbat_cable_imp_threshold / 1000,
+			pinfo->data.ta_ac_charger_input_current / 1000);
+		pe20->aicr_cable_imp = pinfo->data.ta_ac_charger_input_current;
+		goto end;
+	}
+#else /* MediaTek */
 	if (pe20->vbat_orig > pinfo->data.vbat_cable_imp_threshold) {
 		chr_err("VBAT > %dmV, directly set aicr to %dmA\n",
 			pinfo->data.vbat_cable_imp_threshold / 1000,
@@ -298,6 +312,7 @@ static void mtk_pe20_check_cable_impedance(struct charger_manager *pinfo)
 		pe20->aicr_cable_imp = pinfo->data.ac_charger_input_current;
 		goto end;
 	}
+#endif
 
 	/* Disable cable drop compensation */
 	charger_dev_enable_cable_drop_comp(pinfo->chg1_dev, false);
@@ -349,7 +364,11 @@ static void mtk_pe20_check_cable_impedance(struct charger_manager *pinfo)
 	msleep(250);
 
 	if (cable_imp < pinfo->data.cable_imp_threshold) {
+#ifdef CONFIG_LGE_PM
+		pe20->aicr_cable_imp = pinfo->data.ta_ac_charger_input_current;
+#else /* MediaTek */
 		pe20->aicr_cable_imp = pinfo->data.ac_charger_input_current;
+#endif
 		chr_info("Normal cable\n");
 	} else {
 		pe20->aicr_cable_imp = 1000000; /* uA */
