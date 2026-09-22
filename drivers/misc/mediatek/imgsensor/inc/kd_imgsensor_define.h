@@ -145,6 +145,9 @@ enum ACDK_CAMERA_OPERATION_MODE_ENUM {
 #define SENSOR_MASTER_SYNC_MODE 1
 #define SENSOR_SLAVE_SYNC_MODE 2
 
+/* Flag to describe GET_FRAME_SYNC_PIXEL_LINE_NUM_BY_SCENARIO */
+#define SENSOR_GET_LINELENGTH_FOR_READOUT (0x1 << 0)
+
 /* Define for flicker range table */
 #define GEN_FLICKER_TABLE(var) \
 unsigned int ((var)[][2]) = { \
@@ -936,8 +939,8 @@ enum VC_FEATURE {
 	VC_PDAF_STATS_SE,
 	VC_PDAF_STATS_PIX_1,
 	VC_PDAF_STATS_PIX_2,
-	VC_PDAF_STATS_NE_PIX_1,
-	VC_PDAF_STATS_NE_PIX_2,
+	VC_PDAF_STATS_NE_PIX_1 = VC_PDAF_STATS_PIX_1,
+	VC_PDAF_STATS_NE_PIX_2 = VC_PDAF_STATS_PIX_2,
 	VC_PDAF_STATS_ME_PIX_1,
 	VC_PDAF_STATS_ME_PIX_2,
 	VC_PDAF_STATS_SE_PIX_1,
@@ -973,6 +976,8 @@ struct SINGLE_VC_INFO2 {
 	MUINT16 VC_SIZEH_BYTE;
 };
 
+#define MAX_VC_INFO_CNT			9
+
 struct SENSOR_VC_INFO2_STRUCT {
 	MUINT16 VC_Num;
 	MUINT16 VC_PixelNum;
@@ -980,7 +985,7 @@ struct SENSOR_VC_INFO2_STRUCT {
 	MUINT16 EXPO_Ratio;
 	MUINT16 ODValue;
 	MUINT16 RG_STATSMODE;
-	struct SINGLE_VC_INFO2 vc_info[8];
+	struct SINGLE_VC_INFO2 vc_info[MAX_VC_INFO_CNT];
 	MUINT16 updated;
 };
 struct SET_SENSOR_AWB_GAIN {
@@ -988,6 +993,12 @@ struct SET_SENSOR_AWB_GAIN {
 	MUINT32 ABS_GAIN_R;
 	MUINT32 ABS_GAIN_B;
 	MUINT32 ABS_GAIN_GB;
+};
+struct SET_SENSOR_PATTERN_SOLID_COLOR {
+	MUINT32 COLOR_R;
+	MUINT32 COLOR_Gr;
+	MUINT32 COLOR_Gb;
+	MUINT32 COLOR_B;
 };
 
 struct SET_SENSOR_ISO {
@@ -1016,7 +1027,7 @@ struct SET_PD_BLOCK_INFO_T {
 	MUINT32 i4BlockNumY;
 	/* 1: 1st line is long exposure, 0: 1st line is short exposure*/
 	MUINT32 i4LeFirst;
-	MUINT32 i4Crop[10][2]; /* [scenario][crop] -> (xcrop, ycrop) */
+	MUINT32 i4Crop[20][2]; /* [scenario][crop] -> (xcrop, ycrop) */
 };
 
 enum IMGSENSOR_HDR_SUPPORT_TYPE_ENUM {
@@ -1534,6 +1545,54 @@ enum {
 	FOUR_CELL_CAL_TYPE_FD_DPC      =  0x2,
 	FOUR_CELL_CAL_TYPE_ALL         =  0xff
 };
+
+///////////////// TETRACELL_CAL /////////////
+#define CAL_XTC_SIZE	    2266
+#define CAL_SENSORXTC_SIZE	64
+#define CAL_PDXTC_SIZE	    1897
+
+typedef struct cal_xtc_t {
+	MUINT8 data[CAL_XTC_SIZE];
+} cal_xtc_t;
+
+typedef struct cal_sensorxtc_t {
+	MUINT8 data[CAL_SENSORXTC_SIZE];
+} cal_sensorxtc_t;
+
+typedef struct cal_pdxtc_t {
+	MUINT8 data[CAL_PDXTC_SIZE];
+} cal_pdxtc_t;
+
+typedef struct tetracell_cal_data {
+	cal_xtc_t xtc_1;
+	cal_xtc_t xtc_2;
+	cal_sensorxtc_t  sensorxtc;
+	cal_pdxtc_t pdxtc_1;
+	cal_pdxtc_t pdxtc_2;
+
+	MUINT8 reserve;
+} tetracell_cal_data_t;
+
+typedef struct tetracell_cal_format_t {
+	bool flag;
+	MUINT16 start_addr;
+	MUINT16 size;
+	MUINT16 offset;
+	MUINT16 check_addr;
+} tetracell_cal_format_t;
+
+enum CAL_FORM {
+	CAL_XTC_1 = 0,
+	CAL_XTC_2,
+	CAL_SENSORXTC,
+	CAL_PDXTC_1,
+	CAL_PDXTC_2,
+	TETRACELL_CAL_FORM_MAX
+};
+
+/*1794 1793*/
+#define TETRACELL_CAL_SIZE	sizeof(tetracell_cal_data_t)
+///////////////// TETRACELL_CAL /////////////
 
 enum IMGSENSOR_AE_MODE {
 	IMGSENSOR_AE_MODE_SE,
