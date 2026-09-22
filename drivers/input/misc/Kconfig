@@ -860,4 +860,42 @@ config INPUT_HISI_POWERKEY
 	  To compile this driver as a module, choose M here: the
 	  module will be called hisi_powerkey.
 
+config LGE_USE_SAR_CONTROLLER
+       bool "sar sensor device"
+       help
+         Support sap sensor for this model.
+
+config INPUT_SAR_ATMF04MQF
+    tristate "AD ATMF04MQF SAR support"
+    depends on INPUT && I2C
+    default n
+    help
+      Say Y to enable support for the AD ATMF04MQF SAR controller driver.
+
+config INPUT_SAR_ATMF04MQF_2ND
+    tristate "AD ATMF04MQF SAR support"
+    depends on INPUT && I2C
+    default n
+    help
+      Say Y to enable support for the AD ATMF04MQF SAR controller driver.
+
+config INPUT_SAR_ALMF04QFN_2_3CH
+	tristate "AD ALMF04QFN SAR support"
+	depends on INPUT && I2C
+	default n
+	help
+	  Say Y to enable support for the AD ALMF04QFN SAR controller driver.
+
+config INPUT_SAR_ALMF04QFN_2_3CH_NIT
+	tristate "AD ALMF04QFN NIT SAR support"
+	depends on INPUT && I2C
+	default n
+	help
+	  Say Y to enable support for the AD ALMF04QFN NIT SAR controller driver.
+
+config LGE_SAR_CONTROLLER_USB_DETECT
+	bool "LGE_SAR_CONTROLLER_USB_DETECT support"
+	help
+	  Support LGE_SAR_CONTROLLER_USB_DETECT feature
+
 endif
