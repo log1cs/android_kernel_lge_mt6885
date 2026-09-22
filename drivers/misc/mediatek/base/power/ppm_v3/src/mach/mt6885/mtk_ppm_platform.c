@@ -210,6 +210,18 @@ void ppm_update_req_by_pwr(struct ppm_policy_req *req)
 	ppm_cobra_update_limit(req);
 }
 
+int ppm_get_pwr_idx(int idx_num)
+{
+	struct ppm_cluster_status cluster_status[NR_PPM_CLUSTERS];
+	int i;
+
+	for_each_ppm_clusters(i) {
+		cluster_status[i].core_num = get_cluster_max_cpu_core(i);
+		cluster_status[i].freq_idx = idx_num;
+	}
+	return ppm_find_pwr_idx(cluster_status);
+}
+
 int ppm_find_pwr_idx(struct ppm_cluster_status *cluster_status)
 {
 	unsigned int pwr_idx = 0;
