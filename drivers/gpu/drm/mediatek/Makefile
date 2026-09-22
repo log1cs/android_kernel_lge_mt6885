@@ -43,6 +43,9 @@ mediatek-drm-y := mtk_drm_drv.o \
 		  mtk_disp_merge.o \
 		  mtk_dmdp_aal.o \
 		  mtk_fbconfig_kdebug.o
+ifneq ($(CONFIG_MTK_CMDQ_MBOX), y)
+mediatek-drm-y += mtk_cmdq_dummy.o
+endif
 
 ifeq ($(CONFIG_DRM_MEDIATEK_DEBUG_FS),y)
 mediatek-drm-y += mtk_drm_debugfs.o
@@ -85,16 +88,44 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/dramc/$(MTK_PLATFORM)	\
              -I$(srctree)/drivers/iommu/				\
              -I$(srctree)/drivers/devfreq/				\
              -I$(srctree)/drivers/gpu/drm/				\
-             -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/mach/				\
              -I$(srctree)/drivers/misc/mediatek/include/mt-plat \
              -I$(srctree)/drivers/misc/mediatek/leds/ \
              -I$(srctree)/drivers/misc/mediatek/leds/$(MTK_PLATFORM) \
-             -I$(srctree)/drivers/misc/mediatek/cmdq/mailbox/
+             -I$(srctree)/drivers/misc/mediatek/cmdq/mailbox/ \
+             -I$(srctree)/drivers/gpu/drm/mediatek/lge/ \
+	     -I$(srctree)/drivers/gpu/drm/mediatek/
+ifeq (y, $(filter y, $(CONFIG_MACH_MT6833)))
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6833/include/mach/
+else
+ifeq (y, $(filter y, $(CONFIG_MACH_MT6781)))
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6781/include/mach/
+else
+ifeq (y, $(filter y, $(CONFIG_MACH_MT6877)))
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6877/include/mach/
+else
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/mach/
+endif
+endif
+endif
+
+ifeq ($(or $(strip $(CONFIG_MTK_SVP_ON_MTEE_SUPPORT)), $(strip $(CONFIG_MTK_CAM_GENIEZONE_SUPPORT))),y)
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/trustzone/m4u
+ccflags-y += -I$(srctree)/drivers/iommu
+endif
 
 ccflags-$(CONFIG_MTK_CMDQ_MBOX_EXT) += -I$(srctree)/drivers/misc/mediatek/cmdq/mailbox
+ccflags-$(CONFIG_LGE_PM_PRM) += -I$(srctree)/drivers/soc/mediatek/lge/power
 
 subdir-ccflags-y += -I$(srctree)/drivers/staging/android/ion/ \
-		    -I$(srctree)/drivers/staging/android/ion/mtk
+		    -I$(srctree)/drivers/staging/android/ion/mtk \
+		    -I$(srctree)/drivers/misc/mediatek/trusted_mem/public
+
+obj-$(CONFIG_LGE_DISPLAY_COMMON) += lge/
+ccflags-$(CONFIG_LGE_DISPLAY_COMMON) += -I$(srctree)/drivers/gpu/drm/mediatek/lge/ \
+					-I$(srctree)/drivers/gpu/drm/mediatek/lge/ambient/ \
+					-I$(srctree)/drivers/gpu/drm/mediatek/lge/brightness/ \
+					-I$(srctree)/drivers/gpu/drm/mediatek/lge/cm/
 
 ifeq (y, $(filter y, $(CONFIG_MACH_MT6885) $(CONFIG_MACH_MT6893) $(CONFIG_MACH_MT6873) $(CONFIG_MACH_MT6853)))
 ccflags-y += -DDRM_MMPATH
@@ -103,8 +134,11 @@ ccflags-y += -DDISP_MDP_COLOR_ON
 ccflags-y += -DCCORR_SUPPORT
 endif
 
-ifeq (y, $(filter y, $(CONFIG_MACH_MT6833)))
+ifeq (y, $(filter y, $(CONFIG_MACH_MT6833) $(CONFIG_MACH_MT6877) $(CONFIG_MACH_MT6781)))
 ccflags-y += -DNOT_SUPPORT_CABC_HW
 ccflags-y += -DDISP_MDP_COLOR_ON
 ccflags-y += -DCCORR_SUPPORT
 endif
+
+obj-$(CONFIG_LGE_TOUCH_USE_PANEL_NOTIFY) += lge/notifier/lge_panel_notifier.o
+ccflags-$(CONFIG_LGE_TOUCH_USE_PANEL_NOTIFY) += -I$(srctree)/drivers/gpu/drm/mediatek/lge/notifier/

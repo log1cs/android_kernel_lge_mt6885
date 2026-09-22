@@ -247,6 +247,7 @@ void mhal_DPTx_HPDDetectSetting(struct mtk_dp *mtk_dp);
 void mhal_DPTx_PHYSetting(struct mtk_dp *mtk_dp);
 void mhal_DPTx_AuxSetting(struct mtk_dp *mtk_dp);
 void mhal_DPTx_AdjustPHYSetting(struct mtk_dp *mtk_dp, BYTE c0, BYTE cp1);
+void mhal_DPTx_AdjustPHYSetting(struct mtk_dp *mtk_dp, BYTE c0, BYTE cp1);
 void mhal_DPTx_DigitalSetting(struct mtk_dp *mtk_dp);
 void mhal_DPTx_PSCTRL(bool AUXNHighEnable);
 void mhal_DPTx_SetTxLane(struct mtk_dp *mtk_dp, int Value);
