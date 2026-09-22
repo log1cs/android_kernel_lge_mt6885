@@ -17,8 +17,43 @@
 #include <mt-plat/aee.h>
 #endif
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+static const char category_table[][32] = {
+#include "category_table.txt"
+};
+
+void mdee_get_assert_category(char *filename, char *category, char *keyword)
+{
+	int i;
+	char* ret;
+	int is_find = 0;
+	int total_num = 0;
+
+	total_num = sizeof(category_table) / 32;
+
+	for (i = 1 ; i < total_num ; i += 2) {
+		ret = strstr(filename, category_table[i]);
+		if (ret) {
+			sprintf(category, "%s", category_table[i-1]);
+			sprintf(keyword, "%s", category_table[i]);
+			is_find = 1;
+			break;
+		}
+	}
+
+	if (is_find == 0) {
+		sprintf(category, "BSP.etc");
+		sprintf(keyword, "N/A");
+		i=1;
+	}
+
+	pr_err("found index: %d, category: %s, keyword: %s\n",
+			i/2, category, category_table[i]);
+}
+#endif
+
 void mdee_set_ex_start_str(struct ccci_fsm_ee *ee_ctl,
-	unsigned int type, char *str)
+	const unsigned int type, const char *str)
 {
 	u64 ts_nsec;
 	unsigned long rem_nsec;
@@ -57,11 +92,7 @@ void fsm_md_bootup_timeout_handler(struct ccci_fsm_ee *ee_ctl)
 			"invalid  mem_layout\n");
 		return;
 	}
-	CCCI_NORMAL_LOG(ee_ctl->md_id, FSM,
-		"Dump MD image memory\n");
-	ccci_mem_dump(ee_ctl->md_id,
-		(void *)mem_layout->md_bank0.base_ap_view_vir,
-		MD_IMG_DUMP_SIZE);
+
 	CCCI_NORMAL_LOG(ee_ctl->md_id, FSM,
 		"Dump MD layout struct\n");
 	ccci_mem_dump(ee_ctl->md_id, mem_layout,
@@ -166,11 +197,6 @@ void fsm_md_exception_stage(struct ccci_fsm_ee *ee_ctl, int stage)
 			+ CCCI_EE_OFFSET_CCIF_SRAM,
 			CCCI_EE_SIZE_CCIF_SRAM);
 
-		/* Dump MD image memory */
-		CCCI_MEM_LOG_TAG(md_id, FSM, "Dump MD image memory\n");
-		ccci_util_mem_dump(md_id, CCCI_DUMP_MEM_DUMP,
-			(void *)mem_layout->md_bank0.base_ap_view_vir,
-			MD_IMG_DUMP_SIZE);
 		/* Dump MD memory layout */
 		CCCI_MEM_LOG_TAG(md_id, FSM, "Dump MD layout struct\n");
 		ccci_util_mem_dump(md_id, CCCI_DUMP_MEM_DUMP, mem_layout,

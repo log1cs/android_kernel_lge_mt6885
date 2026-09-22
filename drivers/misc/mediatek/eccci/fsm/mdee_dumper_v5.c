@@ -21,8 +21,10 @@
 #include "mdee_dumper_v5.h"
 #include "ccci_config.h"
 #include "ccci_fsm_sys.h"
-#include "ccci_fsm.h"
-#include "modem_sys.h"
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
 
 #ifndef DB_OPT_DEFAULT
 #define DB_OPT_DEFAULT    (0)	/* Dummy macro define to avoid build error */
@@ -37,14 +39,16 @@ static void ccci_aed_v5(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
 {
 	void *ex_log_addr = NULL;
 	int ex_log_len = 0;
+#if defined(CONFIG_MTK_AEE_FEATURE)
 	void *md_img_addr = NULL;
 	int md_img_len = 0;
+#endif
 	int info_str_len = 0;
 	char *buff;		/*[AED_STR_LEN]; */
 #if defined(CONFIG_MTK_AEE_FEATURE)
 	char buf_fail[] = "Fail alloc mem for exception\n";
 #endif
-	char *img_inf;
+	char *img_inf = NULL;
 	struct mdee_dumper_v5 *dumper = mdee->dumper_obj;
 	int md_id = mdee->md_id;
 	struct ccci_smem_region *mdss_dbg =
@@ -102,10 +106,6 @@ static void ccci_aed_v5(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
 		ex_log_addr = (void *)dumper->ex_pl_info;
 		ex_log_len = MD_HS1_FAIL_DUMP_SIZE;
 	}
-	if (dump_flag & CCCI_AED_DUMP_MD_IMG_MEM) {
-		md_img_addr = (void *)mem_layout->md_bank0.base_ap_view_vir;
-		md_img_len = MD_IMG_DUMP_SIZE;
-	}
 	if (buff == NULL) {
 		fsm_sys_mdee_info_notify(aed_str);
 #if defined(CONFIG_MTK_AEE_FEATURE)
@@ -139,17 +139,28 @@ static char mdee_more_inf_str[MD_EE_CASE_WDT + 1][64] = {
 	"\n[Others] MD watchdog timeout interrupt\n"
 };
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+static char assert_category[32];
+static char assert_keyword[32];
+#endif
+
 static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 	struct debug_info_t *debug_info, char *ex_info)
 {
 	int md_id = mdee->md_id;
-	struct ccci_mem_layout *mem_layout;
+	struct ccci_mem_layout *mem_layout = NULL;
 	char *ex_info_temp = NULL;
 	int ret = 0;
 	int val = 0;
 
 	switch (debug_info->type) {
 	case MD_EX_CLASS_ASSET:
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		memset(assert_category, 0x0, sizeof(assert_category));
+		memset(assert_keyword, 0x0, sizeof(assert_keyword));
+		mdee_get_assert_category(debug_info->dump_assert.file_name,
+			assert_category, assert_keyword);
+#endif
 		/* assert: file name+line number+code*3 */
 		ret = snprintf(ex_info, EE_BUF_LEN_UMOLY,
 			"(%s)\n[%s] file:%s line:%d\np1:0x%08x\np2:0x%08x\np3:0x%08x\n\n",
@@ -168,6 +179,11 @@ static void mdee_output_debug_info_to_buf(struct ccci_fsm_ee *mdee,
 			debug_info->dump_assert.parameters[0],
 			debug_info->dump_assert.parameters[1],
 			debug_info->dump_assert.parameters[2]);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		CCCI_ERROR_LOG(md_id, FSM,
+			"category = %s, keyword = %s\n",
+			assert_category, assert_keyword);
+#endif
 		break;
 	case MD_EX_CLASS_FATAL:
 		/* fatal:  */
@@ -308,12 +324,12 @@ static void mdee_info_dump_v5(struct ccci_fsm_ee *mdee)
 		/* use strncpy, otherwise if this happens after a MD EE,
 		 * the former EE info will be printed out
 		 */
-		db_opt |= DB_OPT_FTRACE;
+		db_opt |= (unsigned int)DB_OPT_FTRACE;
 		/* fall through */
 	case MD_EE_CASE_WDT:
-		strncpy(ex_info, mdee_more_inf_str[dumper->more_info],
-			EE_BUF_LEN_UMOLY);
-		ex_info[EE_BUF_LEN_UMOLY] = '\0';
+		if (snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s",
+			mdee_more_inf_str[dumper->more_info]) < 0)
+			ex_info[0] = 0;
 		break;
 	default:
 		mdee_output_debug_info_to_buf(mdee, debug_info, ex_info);
@@ -368,6 +384,27 @@ err_exit:
 	kfree(ex_info_temp);
 	kfree(i_bit_ex_info);
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	if (debug_info && debug_info->type == MD_EX_CLASS_ASSET) {
+		if (!strcmp(assert_category, "RF"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_RF);
+		else if (!strcmp(assert_category, "AUDIO"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_AUDIO);
+		else if (!strcmp(assert_category, "GPS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_GPS);
+		else if (!strcmp(assert_category, "PS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_PS);
+		else
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_BSP);
+		lge_set_modem_info(debug_info->ex_type);
+	} else if (debug_info && debug_info->type == MD_EX_CLASS_FATAL) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_FATAL);
+		lge_set_modem_info(debug_info->ex_type);
+	} else if (debug_info && debug_info->type != MD_EX_CLASS_INVALID) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_UNKNOWN_CRASH);
+		lge_set_modem_info(debug_info->ex_type);
+	}
+#endif
 }
 
 static void strmncopy(char *src, char *dst, int src_len, int dst_len)
@@ -393,7 +430,7 @@ static struct ex_overview_t *md_ee_get_buf_ptr(struct ccci_fsm_ee *mdee,
 	struct ccci_smem_region *mdss_dbg =
 		ccci_md_get_smem_by_user_id(mdee->md_id,
 			SMEM_USER_RAW_MDSS_DBG);
-	struct ex_overview_t *tar_ptr;
+	struct ex_overview_t *tar_ptr = NULL;
 
 	if (mdee->md_id == MD_SYS1)
 		ccci_md_dump_info(mdee->md_id, DUMP_FLAG_CCIF, ccif_sram, 0);
@@ -420,7 +457,7 @@ static int mdee_set_core_name(int md_id, char *core_name,
 {
 	int core_id;
 	u8 temp_sys_inf_1, temp_sys_inf_2;
-	struct ex_brief_maininfo_v5 *brief_info;
+	struct ex_brief_maininfo_v5 *brief_info = NULL;
 	char core_name_temp[MD_CORE_NAME_DEBUG];
 	int ret = 0;
 
@@ -658,8 +695,8 @@ static void md_ee_set_fatal_para(struct ex_fatal_v5 *fatal_src,
 
 static void mdee_info_prepare_v5(struct ccci_fsm_ee *mdee)
 {
-	struct ex_overview_t *ex_overview;
-	struct ex_brief_maininfo_v5 *brief_info;
+	struct ex_overview_t *ex_overview = NULL;
+	struct ex_brief_maininfo_v5 *brief_info = NULL;
 	struct mdee_dumper_v5 *dumper = mdee->dumper_obj;
 	struct debug_info_t *debug_info = &dumper->debug_info;
 	int md_id = mdee->md_id;
@@ -841,7 +878,7 @@ static void mdee_dumper_v5_dump_ee_info(struct ccci_fsm_ee *mdee,
 			}
 			/* Handshake 2 fail */
 			CCCI_MEM_LOG_TAG(md_id, FSM, "Dump MD EX log\n");
-			if (md_dbg_dump_flag & (1 << MD_DBG_DUMP_SMEM)) {
+			if (md_dbg_dump_flag & (1U << MD_DBG_DUMP_SMEM)) {
 				ccci_util_mem_dump(md_id, CCCI_DUMP_MEM_DUMP,
 					mdccci_dbg->base_ap_view_vir,
 						mdccci_dbg->size);
@@ -885,18 +922,7 @@ static void mdee_dumper_v5_emimpu_callback(
 {
 	int i, s;
 	int c = 0;
-	int md_state;
 	struct ccci_fsm_ctl *ctl = fsm_get_entity_by_md_id(0);
-	struct ccci_modem *md = ccci_md_get_modem_by_id(0);
-
-	if (md) {
-		md_state = ccci_fsm_get_md_state(md->index);
-		if (md_state != INVALID && md_state != GATED &&
-			md_state != WAITING_TO_STOP) {
-			if (md->ops->dump_info)
-				md->ops->dump_info(md, DUMP_FLAG_REG, NULL, 0);
-		}
-	}
 
 	if (!dump) {
 		CCCI_ERROR_LOG(0, FSM,
@@ -935,9 +961,16 @@ static void mdee_dumper_v5_emimpu_callback(
 #endif
 #endif
 
+int __weak mtk_emimpu_md_handling_register(void (*md_handling_func)
+	(unsigned int emi_id, struct reg_info_t *dump, unsigned int leng))
+{
+	CCCI_ERROR_LOG(-1, FSM, "[%s] is not supported!\n", __func__);
+	return -1;
+}
+
 int mdee_dumper_v5_alloc(struct ccci_fsm_ee *mdee)
 {
-	struct mdee_dumper_v5 *dumper;
+	struct mdee_dumper_v5 *dumper = NULL;
 	int md_id = mdee->md_id;
 
 #if (MD_GENERATION >= 6297)
