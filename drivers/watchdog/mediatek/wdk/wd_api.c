@@ -25,6 +25,12 @@
 #include <sec_hal.h>
 #endif
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+//[LGE_UPDATE_S] DMS_SYSTEM dms-fota@lge.com
+#include <soc/mediatek/lge/lge_handle_panic.h>
+//[LGE_UPDATE_E] DMS_SYSTEM dms-fota@lge.com
+#endif
+
 static int wd_cpu_hot_plug_on_notify(int cpu);
 static int wd_cpu_hot_plug_off_notify(int cpu);
 static int spmwdt_mode_config(enum wk_req_en en, enum wk_req_mode mode);
@@ -688,6 +694,11 @@ void arch_reset(char mode, const char *cmd)
 		reboot = WD_SW_RESET_BYPASS_PWR_KEY;
 	} else if (cmd && !strcmp(cmd, "kpoc")) {
 		rtc_mark_kpoc();
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	} else if (lge_get_crash_handle_status() && (lge_get_reboot_reason()&LGE_CRASH_SYS_MASK)) {
+		reboot = WD_SW_RESET_BYPASS_PWR_KEY;
+		reboot |= WD_SW_RESET_KEEP_DDR_RESERVE;
+#endif
 	} else {
 		reboot = WD_SW_RESET_BYPASS_PWR_KEY;
 	}
