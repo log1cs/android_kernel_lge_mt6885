@@ -27,6 +27,14 @@
 #include "scp_excep.h"
 #include "scp_l1c.h"
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/delay.h>
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#define SCP_DUMP_WAIT_SEC 90
+#define SCP_DUMP_MIN_WAIT_SEC 40
+#endif
+
 struct scp_aed_cfg {
 	int *log;
 	int log_size;
@@ -617,6 +625,35 @@ void scp_aed(enum scp_excep_id type, enum scp_core_id id)
 	pr_debug("[SCP] scp exception dump is done\n");
 
 	mutex_unlock(&scp_excep_mutex);
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	lge_set_reboot_reason(LGE_CRASH_SCP_PANIC);
+	lge_set_scp_title((const char *) scp_aed_title);
+	lge_set_scp_will((const char *) aed.detail);
+
+	pr_debug("[SCP] scp_aed : CONFIG_LGE_HANDLE_PANIC in \n");
+
+/*
+	if (lge_get_crash_handle_status()) {
+		dump_stack();
+		pr_err("[LGE] scp_excp wait until SCP dump done.\n");
+		msleep(SCP_DUMP_MIN_WAIT_SEC * 1000);
+
+		if (lge_get_scp_dump_status()) {
+			pr_debug("[SCP] scp_aed : lge_get_scp_dump_status() in \n");
+			emergency_sync();
+			kernel_restart("LGE Reboot by SCP Exception");
+		} else {
+			pr_debug("[SCP] scp_aed : panic in \n");
+			panic("SCP Crash!!\n");
+		}
+
+		while (1);
+	}
+*/
+#endif
+
+
 }
 
 /*
