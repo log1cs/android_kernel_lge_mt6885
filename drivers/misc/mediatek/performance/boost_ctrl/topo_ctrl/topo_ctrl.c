@@ -118,7 +118,7 @@ static void calc_min_cpucap(void)
 				&cpus, cpu_possible_mask);
 
 		calc_cpu_num[i] = cpumask_weight(&cpu_online_cpumask);
-#if 0
+#if 1
 		calc_cpu_cap[i] = arch_get_max_cpu_capacity(cpu_num);
 #else
 		calc_cpu_cap[i] = 0;
@@ -202,7 +202,8 @@ PROC_FOPS_RO(cpus_per_cluster);
 int topo_ctrl_init(struct proc_dir_entry *parent)
 {
 	struct proc_dir_entry *topo_dir = NULL;
-	int i, ret = 0;
+	int ret = 0;
+	size_t i;
 
 	struct pentry {
 		const char *name;
