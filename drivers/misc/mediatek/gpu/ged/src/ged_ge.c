@@ -97,6 +97,11 @@ GED_ERROR ged_ge_init(void)
 	gPoolCache = kmem_cache_create("gralloc_extra",
 		sizeof(struct GEEntry), 0, flags, NULL);
 
+	if (!gPoolCache) {
+		GED_PDEBUG("kmem_cache_create fail\n");
+		err = GED_ERROR_FAIL;
+	}
+
 	return err;
 }
 
@@ -152,8 +157,16 @@ int ged_ge_alloc(int region_num, uint32_t *region_sizes)
 
 	entry->region_sizes = (uint32_t *)entry->data;
 	entry->region_data = (uint32_t **)(entry->region_sizes + region_num);
-	for (i = 0; i < region_num; ++i)
+	for (i = 0; i < region_num; ++i) {
+		// check region_sizes parameter
+		if ( region_sizes[i] <= 0 ||
+			 region_sizes[i] > GE_MAX_REGION_SIZE) {
+			GED_PDEBUG("check size fail rgion_sizes[%d]:%u\n",
+				i, region_sizes[i]);
+			goto err_parameter;
+		}
 		entry->region_sizes[i] = region_sizes[i];
+	}
 
 	entry->unique_id = gen_unique_id();
 
@@ -165,6 +178,8 @@ int ged_ge_alloc(int region_num, uint32_t *region_sizes)
 
 	return entry->alloc_fd;
 
+err_parameter:
+	kfree(entry->data);
 err_kmalloc:
 err_entry_file:
 	put_unused_fd(entry->alloc_fd);
@@ -190,6 +205,7 @@ static int valid_parameters(struct GEEntry *entry, int region_id,
 	if (region_id < 0 || region_id >= entry->region_num ||
 	u32_offset < 0 || u32_size < 0 ||
 	u32_offset * sizeof(uint32_t) > entry->region_sizes[region_id] ||
+	u32_size * sizeof(uint32_t) > entry->region_sizes[region_id] ||
 	(u32_offset + u32_size) * sizeof(uint32_t) >
 		entry->region_sizes[region_id]
 	) {
@@ -217,6 +233,8 @@ int ged_ge_get(int ge_fd, int region_id, int u32_offset,
 
 	if (file == NULL || file->f_op != &GEEntry_fops) {
 		GED_PDEBUG("fail, invalid ge_fd %d\n", ge_fd);
+		if (file)
+			fput(file);
 		return -EFAULT;
 	}
 
@@ -257,6 +275,8 @@ int ged_ge_set(int ge_fd, int region_id, int u32_offset,
 
 	if (file == NULL || file->f_op != &GEEntry_fops) {
 		GED_PDEBUG("fail, invalid ge_fd %d\n", ge_fd);
+		if (file)
+			fput(file);
 		return -EFAULT;
 	}
 
@@ -323,19 +343,19 @@ int ged_bridge_ge_alloc(
 int ged_bridge_ge_get(
 	struct GED_BRIDGE_IN_GE_GET *psGET_IN,
 	struct GED_BRIDGE_OUT_GE_GET *psGET_OUT,
-	int output_package_size)
+	int output_buffer_size)
 {
 	/* in gpu_ext/ged/lib/ged_ge.cpp. ged_ge_get()
 	 * iOutSize will show the header size and data size.
 	 */
 	int header_size = sizeof(struct GED_BRIDGE_OUT_GE_GET);
 
-	if ((output_package_size - header_size) !=
-		psGET_IN->uint32_size * sizeof(uint32_t)) {
-		pr_info("[%s] data (%d byte) != u32_size (%d byte)",
+	if (output_buffer_size <
+		header_size + (psGET_IN->uint32_size * sizeof(uint32_t))) {
+		pr_info("[%s] output_buffer_size (%d byte) < header_size + u32_size (%d byte)",
 			__func__,
-			(int)(output_package_size - header_size),
-			(int)(psGET_IN->uint32_size * sizeof(uint32_t)));
+			(unsigned int)output_buffer_size,
+			(unsigned int)(header_size+(psGET_IN->uint32_size * sizeof(uint32_t))));
 		return -EFAULT;
 	}
 
@@ -351,17 +371,17 @@ int ged_bridge_ge_get(
 int ged_bridge_ge_set(
 	struct GED_BRIDGE_IN_GE_SET *psSET_IN,
 	struct GED_BRIDGE_OUT_GE_SET *psSET_OUT,
-	int input_package_size)
+	int input_buffer_size)
 {
 
 	int header_size = sizeof(struct GED_BRIDGE_IN_GE_SET);
 
-	if ((input_package_size - header_size) !=
-		psSET_IN->uint32_size * sizeof(uint32_t)) {
-		pr_info("[%s] data (%d byte) != u32_size (%d byte)",
+	if (input_buffer_size <
+		header_size+(psSET_IN->uint32_size * sizeof(uint32_t))) {
+		pr_info("[%s] input_buffer_size (%d byte) < header_size + u32_size (%d byte)",
 			__func__,
-			(int)(input_package_size - header_size),
-			(int)(psSET_IN->uint32_size * sizeof(uint32_t)));
+			(unsigned int)input_buffer_size,
+			(unsigned int)(header_size+(psSET_IN->uint32_size * sizeof(uint32_t))));
 		return -EFAULT;
 	}
 
@@ -382,6 +402,8 @@ int ged_bridge_ge_info(
 
 	if (file == NULL || file->f_op != &GEEntry_fops) {
 		GED_PDEBUG("ged_ge fail, invalid ge_fd %d\n", psINFO_IN->ge_fd);
+		if (file)
+			fput(file);
 		return -EFAULT;
 	}
 
