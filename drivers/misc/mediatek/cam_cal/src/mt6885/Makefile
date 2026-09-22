@@ -18,6 +18,8 @@ CAM_CAL_PLATFORM_SRC_PATH := $(CAM_CAL_SRC_PATH)/$(MTK_PLATFORM)
 ARCH_MTK_PROJECT := $(subst ",,$(CONFIG_ARCH_MTK_PROJECT))
 COMMON_VERSION := v2
 
+#LG add refer to LG CUSTOM
+ifeq (,$(wildcard $(CAM_CAL_PLATFORM_SRC_PATH)/camera_project/$(ARCH_MTK_PROJECT)))
 subdir-ccflags-y += -I$(MTK_CUSTOM_PATH)/imgsensor/inc \
                     -I$(MTK_CUSTOM_PATH)/imgsensor/src/$(CONFIG_MTK_PLATFORM)/camera_hw \
                     -I$(MTK_CUSTOM_PATH)/cam_cal/inc \
@@ -45,3 +47,8 @@ endef
 # Project or platform code
 CUSTOM_SRC_LIST := cam_cal_list
 $(foreach src,$(CUSTOM_SRC_LIST),$(eval $(call INC_CUSTOM_SRC,$(src))))
+
+#LG CUSTOM
+else
+obj-y += camera_project/$(ARCH_MTK_PROJECT)/
+endif
