@@ -930,6 +930,13 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 	} while (!err);
 
 out:
+#ifdef CONFIG_MACH_LGE
+	/* add debug code
+	 */
+	if (err) {
+		pr_err("%s: mmc_interrupt_hpi() failed. err: (%d)\n", mmc_hostname(card->host), err);
+	}
+#endif
 	mmc_release_host(card->host);
 	return err;
 }
@@ -1087,7 +1094,7 @@ int mmc_discard_queue(struct mmc_host *host, u32 tasks)
 
 	cmd.flags = MMC_RSP_R1B | MMC_CMD_AC;
 
-	return mmc_wait_for_cmd(host, &cmd, 0);
+	return mmc_wait_for_cmd(host, &cmd, 3);
 }
 EXPORT_SYMBOL(mmc_discard_queue);
 #endif
