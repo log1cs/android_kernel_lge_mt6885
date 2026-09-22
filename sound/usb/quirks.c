@@ -1332,6 +1332,12 @@ void snd_usb_ctl_msg_quirk(struct usb_device *dev, unsigned int pipe,
 	if (chip->usb_id == USB_ID(0x04e8, 0xa051) &&
 	     (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS)
 		mdelay(5);
+
+	if (chip->usb_id == USB_ID(0x04e8, 0xa04c) &&
+	     (requesttype & USB_TYPE_MASK) == USB_TYPE_CLASS) {
+		pr_info("delay 5ms for ctl_msg");
+		mdelay(5);
+	}
 }
 
 /*
