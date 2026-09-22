@@ -1316,7 +1316,7 @@ static inline void uclamp_cpu_put_id(struct task_struct *p, struct rq *rq,
 		rq->uclamp.group[clamp_id][group_id].tasks -= 1;
 #ifdef CONFIG_SCHED_DEBUG
 	else {
-		printk_deferred("[name:uclamp&] invalid CPU[%d] clamp group [%u:%u] refcount\n",
+		printk_deferred_once("[name:uclamp&] invalid CPU[%d] clamp group [%u:%u] refcount\n",
 		     cpu_of(rq), clamp_id, group_id);
 	}
 #endif
@@ -1327,7 +1327,7 @@ static inline void uclamp_cpu_put_id(struct task_struct *p, struct rq *rq,
 	clamp_value = rq->uclamp.group[clamp_id][group_id].value;
 #ifdef CONFIG_SCHED_DEBUG
 	if (unlikely(clamp_value > rq->uclamp.value[clamp_id])) {
-		printk_deferred("[name:uclamp&] invalid CPU[%d] clamp group [%u:%u] value\n",
+		printk_deferred_once("[name:uclamp&] invalid CPU[%d] clamp group [%u:%u] value\n",
 		     cpu_of(rq), clamp_id, group_id);
 	}
 #endif
@@ -1561,9 +1561,11 @@ retry:
 		/* Refcounting is expected to be always 0 for free groups */
 		if (unlikely(uc_cpu->group[clamp_id][group_id].tasks)) {
 #ifdef CONFIG_SCHED_DEBUG
-			pr_warn("invalid CPU[%d] clamp group [%u:%u] refcount: [%u]\n",
+			WARN_ONCE(1, "invalid CPU[%d] clamp group [%u:%u] refcount: [%u] free_group_id: [%u] uc_map_new.se_count: [%lu]\n",
 			     cpu, clamp_id, group_id,
-			     uc_cpu->group[clamp_id][group_id].tasks);
+			     uc_cpu->group[clamp_id][group_id].tasks,
+				free_group_id,
+				uc_map_new.se_count);
 #endif
 			uc_cpu->group[clamp_id][group_id].tasks = 0;
 		}
@@ -4999,18 +5001,35 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	struct rq *rq;
 
 #ifdef CONFIG_MTK_TASK_TURBO
+	rq = __task_rq_lock(p, &rf);
+	update_rq_clock(rq);
+
 	/* if rt boost, recover prio with backup */
 	if (unlikely(is_turbo_task(p))) {
 		if (!dl_prio(p->prio) && !rt_prio(p->prio)) {
 			int backup = p->nice_backup;
 
 			if (backup >= MIN_NICE && backup <= MAX_NICE) {
+				queued = task_on_rq_queued(p);
+				running = task_current(rq, p);
+				if (queued)
+					dequeue_task(rq, p, DEQUEUE_SAVE | DEQUEUE_NOCLOCK);
+				if (running)
+					put_prev_task(rq, p);
+
 				p->static_prio = NICE_TO_PRIO(backup);
+
 				p->prio = p->normal_prio = __normal_prio(p);
 				set_load_weight(p);
+
+				if (queued)
+					enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
+				if (running)
+					set_curr_task(rq, p);
 			}
 		}
 	}
+	__task_rq_unlock(rq, &rf);
 #endif
 	/* XXX used to be waiter->prio, not waiter->task->prio */
 	prio = __rt_effective_prio(pi_task, p->normal_prio);
@@ -6915,14 +6934,6 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf,
 		if (rq->nr_running == 1)
 			break;
 
-		/*
-		 * put_prev_task() and pick_next_task() sched
-		 * class method both need to have an up-to-date
-		 * value of rq->clock[_task],
-		 * this value may be changed, so must update again.
-		 */
-		if (!(rq->clock_update_flags & RQCF_UPDATED))
-			update_rq_clock(rq);
 		/*
 		 * pick_next_task() assumes pinned rq->lock:
 		 */

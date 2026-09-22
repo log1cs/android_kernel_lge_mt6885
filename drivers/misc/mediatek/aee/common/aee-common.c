@@ -25,17 +25,24 @@
 #include <linux/init.h>
 #include <linux/smp.h>
 #include <linux/io.h>
+#include <linux/of.h>
+#include <linux/of_fdt.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
 #ifdef CONFIG_MTK_WATCHDOG
 #include <mtk_wd_api.h>
 #endif
 #include "aee-common.h"
+#include "aed.h"
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <linux/vmalloc.h>
 #include <mt-plat/mrdump.h>
 #include <mrdump_private.h>
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
 
 static struct aee_kernel_api *g_aee_api;
 #define KERNEL_REPORT_LENGTH 344
@@ -164,6 +171,10 @@ EXPORT_SYMBOL(aee_kernel_reminding_api);
 void aed_md_exception_api(const int *log, int log_size, const int *phy,
 			int phy_size, const char *detail, const int db_opt)
 {
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	if (detail) lge_set_modem_will(detail);
+#endif
+
 #ifdef CONFIG_MTK_AEE_AED
 	pr_debug("%s\n", __func__);
 	if (g_aee_api) {
@@ -296,6 +307,11 @@ void aee_sram_printk(const char *fmt, ...)
 	tlen = sprintf(sram_printk_buf, ">%5lu.%06lu< ", (unsigned long)t,
 			nanosec_rem / 1000);
 
+	if (tlen < 0) {
+		preempt_enable();
+		return;
+	}
+
 	r = vscnprintf(sram_printk_buf + tlen, sizeof(sram_printk_buf) - tlen,
 			fmt, args);
 
@@ -305,6 +321,40 @@ void aee_sram_printk(const char *fmt, ...)
 #endif
 }
 EXPORT_SYMBOL(aee_sram_printk);
+
+int aee_is_enable(void)
+{
+	struct device_node *node;
+	const char *aee_enable;
+	int ret = 0;
+
+	node = of_find_node_by_path("/chosen");
+	if (node) {
+		if (of_property_read_string(node, "aee,enable", &aee_enable) == 0) {
+			if (strnstr(aee_enable, "mini", 4))
+				ret = 1;
+			else if (strnstr(aee_enable, "full", 4))
+				ret = 2;
+		}
+		of_node_put(node);
+	} else {
+		pr_notice("%s: Can't find chosen node\n", __func__);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(aee_is_enable);
+
+int aed_get_status(void)
+{
+	int mode;
+
+	mode = aee_get_mode();
+	if ((mode >= AEE_MODE_MTK_ENG) && (mode <= AEE_MODE_CUSTOMER_USER))
+		return 1;
+	return 0;
+}
+EXPORT_SYMBOL(aed_get_status);
 
 static int __init aee_common_init(void)
 {

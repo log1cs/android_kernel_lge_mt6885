@@ -434,7 +434,8 @@ int sd_execute_dvfs_autok(struct msdc_host *host, u32 opcode)
 	res = host->autok_res[vcore];
 
 	if (host->mmc->ios.timing == MMC_TIMING_UHS_SDR104 ||
-	    host->mmc->ios.timing == MMC_TIMING_UHS_SDR50) {
+	    host->mmc->ios.timing == MMC_TIMING_UHS_SDR50 ||
+	    host->mmc->ios.timing == MMC_TIMING_UHS_DDR50) {
 		if (host->is_autok_done == 0) {
 			pr_notice("[AUTOK]SDcard autok\n");
 			ret = autok_execute_tuning(host, res);
@@ -445,20 +446,6 @@ int sd_execute_dvfs_autok(struct msdc_host *host, u32 opcode)
 		} else {
 			autok_init_sdr104(host);
 			autok_tuning_parameter_init(host, res);
-		}
-	}
-
-	/* Distinguish mmc by timing */
-	if (host->mmc->ios.timing == MMC_TIMING_MMC_HS200) {
-#ifdef MSDC_HQA
-		msdc_HQA_set_voltage(host);
-#endif
-		if (opcode == MMC_SEND_STATUS) {
-			pr_notice("[AUTOK]MMC HS200 Tune CMD only\n");
-			ret = hs200_execute_tuning_cmd(host, res);
-		} else {
-			pr_notice("[AUTOK]MMC HS200 Tune\n");
-			ret = hs200_execute_tuning(host, res);
 		}
 	}
 

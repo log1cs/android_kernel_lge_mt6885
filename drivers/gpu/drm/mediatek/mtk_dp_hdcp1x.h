@@ -31,7 +31,11 @@
 #define HDCP1X_REP_RDY_WDT                      5000
 
 #define HDCP1X_REP_MAXDEVS            128
+#ifdef CONFIG_LGE_DISPLAY_COMMON
 #define HDCP1X_REAUNTH_COUNT          3
+#else
+#define HDCP1X_REAUNTH_COUNT          1
+#endif
 
 enum DPTX_DRV_HDCP1X_MainStates {
 	HDCP1X_MainState_H2 = 0,

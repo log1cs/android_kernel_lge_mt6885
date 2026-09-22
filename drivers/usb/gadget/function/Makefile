@@ -58,3 +58,5 @@ usb_f_mtp-y                     := f_mtp.o
 obj-$(CONFIG_USB_CONFIGFS_UEVENT)         += usb_f_mtp.o
 usb_f_ptp-y                     := f_ptp.o
 obj-$(CONFIG_USB_CONFIGFS_UEVENT)         += usb_f_ptp.o
+usb_f_laf-y                     := f_laf.o
+obj-$(CONFIG_LGE_USB_F_LAF)     += usb_f_laf.o

@@ -107,6 +107,11 @@ enum mtk_thermal_sensor_id {
 	MTK_THERMAL_SENSOR_NR_PA,
 	MTK_THERMAL_SENSOR_DCTM,
 	MTK_THERMAL_SENSOR_CHARGER,
+#ifdef CONFIG_LGE_PM_VTS
+	LGE_THERMAL_SENSOR_QUIET,
+	LGE_THERMAL_SENSOR_SKIN,
+	LGE_THERMAL_SENSOR_BATTERY,
+#endif
 
 	MTK_THERMAL_SENSOR_COUNT
 };
@@ -115,7 +120,7 @@ extern int mtk_thermal_get_temp(enum mtk_thermal_sensor_id id);
 extern struct proc_dir_entry *mtk_thermal_get_proc_drv_therm_dir_entry(void);
 
 /* This API function is implemented in mediatek/kernel/drivers/leds/leds.c */
-#if defined(CONFIG_LEDS_MTK_DISP) || defined(CONFIG_LEDS_MTK_PWM)
+#if defined(CONFIG_LEDS_MTK_DISP) || defined(CONFIG_LEDS_MTK_PWM) || defined(CONFIG_LEDS_MTK_I2C)
 extern int setMaxBrightness(char *name, int percent, bool enable);
 #else
 extern int setMaxbrightness(int max_level, int enable);

@@ -241,6 +241,36 @@ static int __init loglevel(char *str)
 
 early_param("loglevel", loglevel);
 
+/* SBP */
+char g_lge_sim_num[4] = "1";
+EXPORT_SYMBOL(g_lge_sim_num);
+
+static int __init lge_sim_num(char *lge_sim_num)
+{
+	strncpy(g_lge_sim_num, lge_sim_num, sizeof(g_lge_sim_num)-1);
+	g_lge_sim_num[sizeof(g_lge_sim_num)-1] = '\0';
+
+	printk("g_lge_sim_num : %s\n", g_lge_sim_num);
+
+	return 0;
+}
+early_param("androidboot.vendor.lge.sim_num", lge_sim_num);
+
+/* HW SKU */
+char g_lge_sku_carrier[16] = "";
+EXPORT_SYMBOL(g_lge_sku_carrier);
+
+static int __init lge_sku_carrier(char *lge_sku_carrier)
+{
+	strncpy(g_lge_sku_carrier, lge_sku_carrier, sizeof(g_lge_sku_carrier)-1);
+	g_lge_sku_carrier[sizeof(g_lge_sku_carrier)-1] = '\0';
+
+	printk("g_lge_sku_carrier : %s\n", g_lge_sku_carrier);
+
+	return 0;
+}
+early_param("androidboot.vendor.lge.sku_carrier", lge_sku_carrier);
+
 /* Change NUL term back to "=", to make "param" the whole string. */
 static int __init repair_env_string(char *param, char *val,
 				    const char *unused, void *arg)

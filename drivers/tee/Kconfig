@@ -4,6 +4,7 @@ config TEE
 	depends on HAVE_ARM_SMCCC || COMPILE_TEST
 	select DMA_SHARED_BUFFER
 	select GENERIC_ALLOCATOR
+	default y
 	help
 	  This implements a generic interface towards a Trusted Execution
 	  Environment (TEE).

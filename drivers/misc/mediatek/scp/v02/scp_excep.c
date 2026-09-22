@@ -28,6 +28,14 @@
 #include "scp_feature_define.h"
 #include "scp_l1c.h"
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/delay.h>
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#define SCP_DUMP_WAIT_SEC 90
+#define SCP_DUMP_MIN_WAIT_SEC 40
+#endif
+
 struct scp_dump_st {
 	uint8_t *detail_buff;
 	uint8_t *ramdump;
@@ -66,9 +74,10 @@ static unsigned int scp_A_task_context_addr;
 struct scp_status_reg c0_m;
 struct scp_status_reg c1_m;
 
-static struct mutex scp_excep_mutex;
 int scp_ee_enable;
 int scp_reset_counts = 100000;
+static atomic_t coredumping = ATOMIC_INIT(0);
+static DECLARE_COMPLETION(scp_coredump_comp);
 
 void scp_dump_last_regs(void)
 {
@@ -325,7 +334,11 @@ void scp_aed(enum SCP_RESET_TYPE type, enum scp_core_id id)
 		return;
 	}
 
-	mutex_lock(&scp_excep_mutex);
+	/* wait for previous coredump complete */
+	wait_for_completion(&scp_coredump_comp);
+	if (atomic_read(&coredumping) == true)
+		pr_notice("[SCP] coredump overwrite happen\n");
+	atomic_set(&coredumping, true);
 
 	/* get scp title and exception type*/
 	switch (type) {
@@ -366,7 +379,34 @@ void scp_aed(enum SCP_RESET_TYPE type, enum scp_core_id id)
 
 	pr_debug("[SCP] scp exception dump is done\n");
 
-	mutex_unlock(&scp_excep_mutex);
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	lge_set_reboot_reason(LGE_CRASH_SCP_PANIC);
+	lge_set_scp_title((const char *) scp_aed_title);
+	lge_set_scp_will((const char *) "TO DO");
+
+	pr_debug("[SCP] scp_aed : CONFIG_LGE_HANDLE_PANIC in \n");
+
+/*
+	if (lge_get_crash_handle_status()) {
+		dump_stack();
+		pr_err("[LGE] scp_excp wait until SCP dump done.\n");
+		msleep(SCP_DUMP_MIN_WAIT_SEC * 1000);
+
+		if (lge_get_scp_dump_status()) {
+			pr_debug("[SCP] scp_aed : lge_get_scp_dump_status() in \n");
+			emergency_sync();
+			kernel_restart("LGE Reboot by SCP Exception");
+		} else {
+			pr_debug("[SCP] scp_aed : panic in \n");
+			panic("SCP Crash!!\n");
+		}
+
+		while (1);
+	}
+*/
+#endif
+
 }
 
 
@@ -377,17 +417,24 @@ static ssize_t scp_A_dump_show(struct file *filep,
 {
 	unsigned int length = 0;
 
-	mutex_lock(&scp_excep_mutex);
 
 	if (offset >= 0 && offset < scp_dump.ramdump_length) {
-		if ((offset + size) > scp_dump.ramdump_length)
+		if ((offset + size) >= scp_dump.ramdump_length)
 			size = scp_dump.ramdump_length - offset;
 
 		memcpy(buf, scp_dump.ramdump + offset, size);
 		length = size;
+		/* the last time read scp_dump buffer has done
+		 * so the next coredump flow can be continued
+		 */
+		if (size == scp_dump.ramdump_length - offset) {
+			atomic_set(&coredumping, false);
+			pr_notice("[SCP] coredumping:%d, coredump complete\n",
+				atomic_read(&coredumping));
+			complete(&scp_coredump_comp);
+		}
 	}
 
-	mutex_unlock(&scp_excep_mutex);
 
 	return length;
 }
@@ -411,7 +458,6 @@ int scp_excep_init(void)
 {
 	int dram_size = 0;
 
-	mutex_init(&scp_excep_mutex);
 
 	/* alloc dump memory */
 	scp_dump.detail_buff = vmalloc(SCP_AED_STR_LEN);
@@ -430,6 +476,8 @@ int scp_excep_init(void)
 	scp_dump.ramdump_length = 0;
 	/* 1: ee on, 0: ee disable */
 	scp_ee_enable = 1;
+	/* all coredump need element is prepare done */
+	complete(&scp_coredump_comp);
 
 	return 0;
 }

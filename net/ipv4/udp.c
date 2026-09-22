@@ -137,6 +137,9 @@ EXPORT_SYMBOL(udp_memory_allocated);
 
 #define MAX_UDP_PORTS 65536
 #define PORTS_PER_CHAIN (MAX_UDP_PORTS / UDP_HTABLE_SIZE_MIN)
+//MAX_UDP_RCVBUF_COUNT
+#define MAX_UDP_RCVBUF_COUNT 2
+#define UDP_GRO_DISABLED 5
 
 /* IPCB reference means this can not be used from early demux */
 static bool udp_lib_exact_dif_match(struct net *net, struct sk_buff *skb)
@@ -1340,8 +1343,15 @@ int __udp_enqueue_schedule_skb(struct sock *sk, struct sk_buff *skb)
 	 * queue is full; always allow at least a packet
 	 */
 	rmem = atomic_read(&sk->sk_rmem_alloc);
+//MAX_UDP_RCVBUF_COUNT
+	if (rmem > sk->sk_rcvbuf) {
+		if (sk->sk_rcvbuf < sysctl_rmem_max) {
+			sk->sk_rcvbuf = min(sk->sk_rcvbuf * MAX_UDP_RCVBUF_COUNT, (int)sysctl_rmem_max);
+		}
+
 	if (rmem > sk->sk_rcvbuf)
 		goto drop;
+	}
 
 	/* Under mem pressure, it might be helpful to help udp_recvmsg()
 	 * having linear skbs :
@@ -2452,9 +2462,14 @@ int udp_lib_setsockopt(struct sock *sk, int level, int optname,
 
 	case UDP_GRO:
 		lock_sock(sk);
-		if (valbool)
-			udp_tunnel_encap_enable(sk->sk_socket);
-		up->gro_enabled = valbool;
+		if (val == 0xEAEA) {
+			up->gro_disabled = UDP_GRO_DISABLED;
+		} else {
+			up->gro_disabled = 0;
+			if (valbool)
+				udp_tunnel_encap_enable(sk->sk_socket);
+			up->gro_enabled = valbool;
+		}
 		release_sock(sk);
 		break;
 
@@ -2566,6 +2581,13 @@ int udp_lib_getsockopt(struct sock *sk, int level, int optname,
 
 	case UDPLITE_RECV_CSCOV:
 		val = up->pcrlen;
+		break;
+
+	case UDP_GRO:
+		if (up->gro_disabled == UDP_GRO_DISABLED)
+			val = 0xEAEA;
+		else
+			val = -1;
 		break;
 
 	default:

@@ -45,6 +45,10 @@ extern int mtk_pe50_deinit(struct charger_manager *chgmgr);
 extern int mtk_pe50_thermal_throttling(struct charger_manager *chgmgr, int uA);
 extern int mtk_pe50_set_jeita_vbat_cv(struct charger_manager *chgmgr, int uV);
 extern int mtk_pe50_stop_algo(struct charger_manager *chgmgr, bool rerun);
+#ifdef CONFIG_LGE_PM
+extern int mtk_pe50_set_test_mode(struct charger_manager *chgmgr, bool test_mode);
+extern bool mtk_pe50_is_charging(struct charger_manager *chgmgr);
+#endif
 #else
 static inline int mtk_pe50_init(struct charger_manager *chgmgr)
 {
@@ -114,5 +118,16 @@ static inline int mtk_pe50_stop_algo(struct charger_manager *chgmgr, bool rerun)
 {
 	return -ENOTSUPP;
 }
+#ifdef CONFIG_LGE_PM
+static inline int mtk_pe50_set_test_mode(struct charger_manager *chgmgr, bool test_mode)
+{
+	return -ENOTSUPP;
+}
+
+static inline bool mtk_pe50_is_charging(struct charger_manager *chgmgr)
+{
+	return false;
+}
+#endif
 #endif /* CONFIG_MTK_PUMP_EXPRESS_50_SUPPORT */
 #endif /* __MTK_PE_50_INTF_H */

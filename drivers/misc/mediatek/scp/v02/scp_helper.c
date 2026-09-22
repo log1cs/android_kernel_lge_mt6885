@@ -59,6 +59,14 @@
 #include <mt-plat/mtk-mbox.h>
 #include "scp_ipi.h"
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/delay.h>
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#define SCP_DUMP_WAIT_SEC 90
+#define SCP_DUMP_MIN_WAIT_SEC 40
+#endif
+
 /* scp semaphore timeout count definition */
 #define SEMAPHORE_TIMEOUT 5000
 #define SEMAPHORE_3WAY_TIMEOUT 5000
@@ -218,19 +226,20 @@ void memcpy_from_scp(void *trg, const void __iomem *src, int size)
 /*
  * acquire a hardware semaphore
  * @param flag: semaphore id
- * return  1 :get sema success
- *        -1 :get sema timeout
+ * return  0 :get sema success
+ *         1 :get sema timeout
+ *        -1 :get sema fail, driver not ready
  */
 int get_scp_semaphore(int flag)
 {
 	int read_back;
-	int count = 0;
-	int ret = -1;
+	unsigned int cnt;
+	int ret = SEMAPHORE_FAIL;
 	unsigned long spin_flags;
 
-	/* return 1 to prevent from access when driver not ready */
+	/* return -1 to prevent from access when driver not ready */
 	if (!driver_init_done)
-		return -1;
+		return SEMAPHORE_NOT_INIT;
 
 	/* spinlock context safe*/
 	spin_lock_irqsave(&scp_awake_spinlock, spin_flags);
@@ -240,23 +249,23 @@ int get_scp_semaphore(int flag)
 	read_back = (readl(SCP_SEMAPHORE) >> flag) & 0x1;
 
 	if (read_back == 0) {
+		cnt = SEMAPHORE_TIMEOUT;
 		writel((1 << flag), SCP_SEMAPHORE);
 
-		while (count != SEMAPHORE_TIMEOUT) {
+		while (cnt-- > 0) {
 			/* repeat test if we get semaphore */
 			read_back = (readl(SCP_SEMAPHORE) >> flag) & 0x1;
 			if (read_back == 1) {
-				ret = 1;
+				ret = SEMAPHORE_SUCCESS;
 				break;
 			}
 			writel((1 << flag), SCP_SEMAPHORE);
-			count++;
 		}
 
-		if (ret < 0)
-			pr_debug("[SCP] get scp sema. %d TIMEOUT...!\n", flag);
+		if (ret == SEMAPHORE_FAIL)
+			pr_notice("[SCP] get scp sema. %d TIMEOUT...!\n", flag);
 	} else {
-		pr_err("[SCP] already hold scp sema. %d\n", flag);
+		pr_notice("[SCP] already hold scp sema. %d\n", flag);
 	}
 
 	spin_unlock_irqrestore(&scp_awake_spinlock, spin_flags);
@@ -268,18 +277,19 @@ EXPORT_SYMBOL_GPL(get_scp_semaphore);
 /*
  * release a hardware semaphore
  * @param flag: semaphore id
- * return  1 :release sema success
- *        -1 :release sema fail
+ * return  0 :release sema success
+ *         1 :release sema fail
+ *        -1 :release sema fail, driver not ready
  */
 int release_scp_semaphore(int flag)
 {
 	int read_back;
-	int ret = -1;
+	int ret = SEMAPHORE_FAIL;
 	unsigned long spin_flags;
 
-	/* return 1 to prevent from access when driver not ready */
+	/* return -1 to prevent from access when driver not ready */
 	if (!driver_init_done)
-		return -1;
+		return SEMAPHORE_NOT_INIT;
 
 	/* spinlock context safe*/
 	spin_lock_irqsave(&scp_awake_spinlock, spin_flags);
@@ -292,11 +302,11 @@ int release_scp_semaphore(int flag)
 		writel((1 << flag), SCP_SEMAPHORE);
 		read_back = (readl(SCP_SEMAPHORE) >> flag) & 0x1;
 		if (read_back == 0)
-			ret = 1;
+			ret = SEMAPHORE_SUCCESS;
 		else
-			pr_debug("[SCP] release scp sema. %d failed\n", flag);
+			pr_notice("[SCP] release scp sema. %d failed\n", flag);
 	} else {
-		pr_err("[SCP] try to release sema. %d not own by me\n", flag);
+		pr_notice("[SCP] try to release sema. %d not own by me\n", flag);
 	}
 
 	spin_unlock_irqrestore(&scp_awake_spinlock, spin_flags);
@@ -305,6 +315,94 @@ int release_scp_semaphore(int flag)
 }
 EXPORT_SYMBOL_GPL(release_scp_semaphore);
 
+/*
+ * acquire a hardware semaphore
+ * @param flag: semaphore id
+ * return 0: get sema success
+ *        1: get sema timeout
+ *       -1: get sema fail, driver not ready
+ */
+int scp_get_semaphore_3way(int flag)
+{
+	int ret = SEMAPHORE_FAIL;
+	unsigned int cnt;
+	unsigned long spin_flags;
+	unsigned int read_back;
+
+	/* return -1 to prevent from access when driver not ready */
+	if (!driver_init_done)
+		return SEMAPHORE_NOT_INIT;
+
+	/* spinlock context safe*/
+	spin_lock_irqsave(&scp_awake_spinlock, spin_flags);
+
+	flag = flag * 4 + 2;
+
+	read_back = (readl(SCP_3WAY_SEMAPHORE) >> flag) & 0x1;
+	if (read_back == 0) {
+		cnt = SEMAPHORE_3WAY_TIMEOUT;
+
+		while (cnt-- > 0) {
+			writel((1 << flag), SCP_3WAY_SEMAPHORE);
+
+			read_back = (readl(SCP_3WAY_SEMAPHORE) >> flag) & 0x1;
+			if (read_back == 1) {
+				ret = SEMAPHORE_SUCCESS;
+				break;
+			}
+
+		}
+		if (ret == SEMAPHORE_FAIL)
+			pr_notice("[SCP] get scp sema. %d TIMEOUT...!\n", flag);
+	} else {
+		pr_notice("[SCP] already hold scp sema. %d\n", flag);
+	}
+
+	spin_unlock_irqrestore(&scp_awake_spinlock, spin_flags);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(scp_get_semaphore_3way);
+
+/*
+ * release a hardware semaphore
+ * @param flag: semaphore id
+ * return 0: release sema success
+ *        1: release sema fail, sem busy
+ *       -1: release sema fail, driver not ready
+ */
+int scp_release_semaphore_3way(int flag)
+{
+	int ret = SEMAPHORE_FAIL;
+	unsigned long spin_flags;
+	unsigned int read_back;
+
+	/* return -1 to prevent from access when driver not ready */
+	if (!driver_init_done)
+		return SEMAPHORE_NOT_INIT;
+
+	/* spinlock context safe*/
+	spin_lock_irqsave(&scp_awake_spinlock, spin_flags);
+
+	flag = flag * 4 + 2;
+
+	read_back = (readl(SCP_3WAY_SEMAPHORE) >> flag) & 0x1;
+	if (read_back == 1) {
+		writel((1 << flag), SCP_3WAY_SEMAPHORE);
+		read_back = (readl(SCP_3WAY_SEMAPHORE) >> flag) & 0x1;
+		if (read_back == 0)
+			ret = SEMAPHORE_SUCCESS;
+		else
+			pr_notice("[SCP] release scp sema. %d failed\n", flag);
+	} else {
+		pr_notice("[SCP] try to release sema. %d not own by me\n", flag);
+	}
+
+	spin_unlock_irqrestore(&scp_awake_spinlock, spin_flags);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(scp_release_semaphore_3way);
 
 static BLOCKING_NOTIFIER_HEAD(scp_A_notifier_list);
 /*
@@ -891,37 +989,6 @@ DEVICE_ATTR(recovery_flag, 0600, scp_recovery_flag_r, scp_recovery_flag_w);
 
 #endif
 
-
-/******************************************************************************
- *****************************************************************************/
-static ssize_t scp_set_log_filter(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	int ret;
-	uint32_t filter;
-
-	if (sscanf(buf, "0x%08x", &filter) != 1)
-		return -EINVAL;
-
-	ret = mtk_ipi_send(&scp_ipidev, IPI_OUT_SCP_LOG_FILTER_1, 0, &filter,
-			   PIN_OUT_SIZE_SCP_LOG_FILTER_1, 0);
-	switch (ret) {
-	case IPI_ACTION_DONE:
-		pr_notice("[SCP] Set log filter to 0x%08x\n", filter);
-		return count;
-
-	case IPI_PIN_BUSY:
-		pr_notice("[SCP] IPI busy. Set log filter failed!\n");
-		return -EBUSY;
-
-	default:
-		pr_notice("[SCP] IPI error. Set log filter failed!\n");
-		return -EIO;
-	}
-}
-DEVICE_ATTR(log_filter, 0200, NULL, scp_set_log_filter);
-
-
 /******************************************************************************
  *****************************************************************************/
 static struct miscdevice scp_device = {
@@ -1479,6 +1546,28 @@ void scp_sys_reset_ws(struct work_struct *ws)
 		pr_debug("[SCP] %s(): scp_aed_reset\n", __func__);
 		scp_aed(scp_reset_type, SCP_A_ID);
 	}
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	pr_debug("scp_sys_reset_ws : CONFIG_LGE_HANDLE_PANIC in \n");
+
+	if (lge_get_crash_handle_status()) {
+		dump_stack();
+		pr_err("[LGE] scp_sys_reset_ws : scp_helper wait until SCP dump done.\n");
+		msleep(SCP_DUMP_MIN_WAIT_SEC * 1000);
+
+		if (lge_get_scp_dump_status()) {
+			pr_debug("scp_sys_reset_ws : lge_get_scp_dump_status() in \n");
+			emergency_sync();
+			kernel_restart("LGE Reboot by SCP Exception");
+		} else {
+			pr_debug("scp_sys_reset_ws : panic in \n");
+			panic("SCP Crash!!\n");
+		}
+
+		while (1);
+	}
+#endif
+
 	pr_debug("[SCP] %s(): disable logger\n", __func__);
 	/* logger disable must after scp_aed() */
 	scp_logger_init_set(0);

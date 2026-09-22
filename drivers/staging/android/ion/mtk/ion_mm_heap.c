@@ -87,14 +87,40 @@ struct ion_mm_buffer_info {
 	} while (0)
 
 static unsigned int order_gfp_flags[] = {
+#ifndef CONFIG_MIGRATE_HIGHORDER
 	(GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY) &
 	    ~__GFP_RECLAIM,
 	(GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY) &
 	    ~__GFP_DIRECT_RECLAIM,
+#endif
 	(GFP_HIGHUSER | __GFP_ZERO)
 };
 
+#ifndef CONFIG_MIGRATE_HIGHORDER
 static const unsigned int orders[] = { 4, 1, 0 };
+#else
+static const unsigned int orders[] = { 0 };
+#endif
+
+#ifdef CONFIG_MIGRATE_HIGHORDER
+static unsigned int m_highorder_gfp_flags = (GFP_HIGHUSER | __GFP_ZERO
+		| __GFP_NOWARN | __GFP_NORETRY | __GFP_HIGHORDER) & ~__GFP_RECLAIM;
+static const unsigned int highorders[] = {9, 8, 4};
+static const int num_highorders = ARRAY_SIZE(highorders);
+
+#define MIN_HIGHORDER_SZ 65536
+
+static int highorder_to_index(unsigned int order)
+{
+	int i;
+
+	for (i = 0; i < num_highorders; i++)
+		if (order == highorders[i])
+			return i;
+	BUG();
+	return -1;
+}
+#endif
 
 /* static const unsigned int orders[] = {8, 4, 0}; */
 static const int num_orders = ARRAY_SIZE(orders);
@@ -118,6 +144,9 @@ struct ion_system_heap {
 	struct ion_heap heap;
 	struct ion_page_pool **pools;
 	struct ion_page_pool **cached_pools;
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	struct ion_page_pool **highorder_pools;
+#endif
 };
 
 struct page_info {
@@ -163,7 +192,15 @@ static void free_buffer_page(struct ion_system_heap *heap,
 	int order_idx = order_to_index(order);
 	unsigned long private_flags = buffer->private_flags;
 
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	if (order > orders[0]) {
+		struct ion_page_pool *pool = heap->highorder_pools[highorder_to_index(order)];
+
+		ion_page_pool_free(pool, page);
+	} else if (!cached && !(private_flags & ION_PRIV_FLAG_SHRINKER_FREE)) {
+#else
 	if (!cached && !(private_flags & ION_PRIV_FLAG_SHRINKER_FREE)) {
+#endif
 		struct ion_page_pool *pool = heap->pools[order_idx];
 
 		ion_page_pool_free(pool, page);
@@ -217,6 +254,7 @@ static struct page_info *alloc_largest_available(struct ion_system_heap *heap,
 	return NULL;
 }
 
+#ifndef CONFIG_MIGRATE_HIGHORDER
 static int ion_mm_pool_total(struct ion_system_heap *heap,
 			     unsigned long order, bool cached)
 {
@@ -225,14 +263,108 @@ static int ion_mm_pool_total(struct ion_system_heap *heap,
 
 	if (!cached) {
 		pool = heap->pools[order_to_index(order)];
-		count = pool->low_count + pool->high_count;
+		count = atomic_read(&pool->low_count) + atomic_read(&pool->high_count);
 	} else {
 		pool = heap->cached_pools[order_to_index(order)];
-		count = (pool->low_count + pool->high_count);
+		count = atomic_read(&pool->low_count) + atomic_read(&pool->high_count);
 	}
 
 	return count;
 }
+#else
+static struct page *alloc_buffer_highorder_page(struct ion_system_heap *heap,
+				      struct ion_buffer *buffer, unsigned long order) {
+	struct page *page;
+	struct ion_page_pool *pool;
+
+	pool = heap->highorder_pools[highorder_to_index(order)];
+	page = ion_page_pool_alloc(pool);
+
+	if (!page) {
+		pr_debug("[ion_dbg] alloc_pages fail order=%lu in highorder\n", order);
+		return 0;
+	}
+
+	return page;
+}
+
+/*
+ * alloc_largest_highorder() can return NULL.
+ * It always allocate high order pages from MIGRATE_HIGHORDER
+ */
+struct page_info *alloc_largest_highorder(struct ion_system_heap *heap,
+						 struct ion_buffer *buffer,
+						 unsigned long size,
+						 unsigned int max_order)
+{
+	struct page *page;
+	struct page_info *info;
+	int i;
+
+	if (size < MIN_HIGHORDER_SZ)
+		return NULL;
+
+	info = kmalloc(sizeof(struct page_info), GFP_KERNEL);
+	if (!info) {
+		IONMSG("%s kmalloc failed info is null.\n", __func__);
+		return NULL;
+	}
+
+	for (i = 0; i < num_highorders; i++) {
+		if (size < order_to_size(highorders[i]))
+			continue;
+		if (max_order < highorders[i])
+			continue;
+
+		page = alloc_buffer_highorder_page(heap, buffer, highorders[i]);
+		if (!page)
+			continue;
+
+		info->page = page;
+		info->order = highorders[i];
+		INIT_LIST_HEAD(&info->list);
+		return info;
+	}
+	kfree(info);
+
+	return NULL;
+}
+
+void ion_mm_heap_destroy_highorder_pools(struct ion_page_pool **pools)
+{
+	int i;
+	for (i = 0; i < num_highorders; i++)
+		if (pools[i])
+			ion_page_pool_destroy(pools[i]);
+}
+
+/**
+ * ion_mm_heap_create_highorder_pools - creates pools for all orders
+ *
+ * If this fails you don't need to destroy any pools. It's all or
+ * nothing. if it succeeds you'll eventually need to use
+ * ion_system_heap_destroy_pools to destroy the pools.
+ */
+int ion_mm_heap_create_highorder_pools(struct ion_page_pool **pools)
+{
+	int i;
+	for (i = 0; i < num_highorders; i++) {
+		struct ion_page_pool *pool;
+		gfp_t gfp_flags = m_highorder_gfp_flags;
+
+		/* ion highorder pool is not divided into cached & uncached */
+		/* 3rd argument is not meaningful */
+		pool = ion_page_pool_create(gfp_flags, highorders[i], true);
+		if (!pool)
+			goto err_create_pool;
+		pools[i] = pool;
+	}
+	return 0;
+err_create_pool:
+	ion_mm_heap_destroy_highorder_pools(pools);
+	return 1;
+}
+#endif
 
 #define MTK_GET_DOMAIN_IGNORE (DOMAIN_NUM + 1)
 int ion_get_domain_id(int from_kernel, int *port)
@@ -370,18 +502,29 @@ static int ion_mm_heap_allocate(struct ion_heap *heap,
 
 	start = sched_clock();
 
+#ifndef CONFIG_MIGRATE_HIGHORDER
 	/* add time interval to alloc 64k page in low memory status*/
 	if (((start - alloc_large_fail_ts) < 1000000000) &&
 	    (ion_mm_pool_total(sys_heap, orders[0],
 				ion_buffer_cached(buffer)) < 10))
 		max_order = orders[1];
+#endif
 
 	caller_pid = (unsigned int)current->pid;
 	caller_tid = (unsigned int)current->tgid;
 
 	while (size_remaining > 0) {
+#ifndef CONFIG_MIGRATE_HIGHORDER
 		info = alloc_largest_available(sys_heap, buffer, size_remaining,
 					       max_order);
+#else
+		info = alloc_largest_highorder(sys_heap, buffer, size_remaining,
+				highorders[0]);
+		if (!info) {
+			info = alloc_largest_available(sys_heap, buffer,
+					size_remaining, max_order);
+		}
+#endif
 		if (!info) {
 			IONMSG("%s alloc_largest_available failed info\n",
 			       __func__);
@@ -955,8 +1098,13 @@ out:
 	end = sched_clock();
 	if (buffer->sg_table &&
 	    (buffer->sg_table->nents > 10 &&
+#if BITS_PER_LONG == 32
+	    (div_u64((end - start),
+	     buffer->sg_table->nents > 500000ULL)) ||
+#else
 	    ((end - start) /
 	     buffer->sg_table->nents > 500000ULL) ||
+#endif
 	    (end - start > 50000000ULL)))
 		IONMSG("warn: p(%d-%d) phys time:%lluns n:%u s:%zu\n",
 		       buffer_info->module_id,
@@ -999,11 +1147,11 @@ int ion_mm_heap_pool_total(struct ion_heap *heap)
 	for (i = 0; i < num_orders; i++) {
 		struct ion_page_pool *pool = sys_heap->pools[i];
 
-		total +=
-		    (pool->high_count + pool->low_count) * (1 << pool->order);
+		total += (atomic_read(&pool->high_count) + atomic_read(&pool->low_count))
+				* (1 << pool->order);
 		pool = sys_heap->cached_pools[i];
-		total +=
-		    (pool->high_count + pool->low_count) * (1 << pool->order);
+		total += (atomic_read(&pool->high_count) + atomic_read(&pool->low_count))
+		   		* (1 << pool->order);
 	}
 
 	return total;
@@ -1095,6 +1243,16 @@ static int __do_dump_share_fd(const void *data, struct file *file,
 
 	buffer = ion_drv_file_to_buffer(file);
 	if (IS_ERR_OR_NULL(buffer))
+		return 0;
+
+	/*
+	 * secure heap buffer struct is different with mm_heap buffer,
+	 * and it isn't public, don't dump here.
+	 *
+	 * only dump supported heap type in ion_mm_heap.c
+	 */
+	if (buffer->heap->type != (unsigned int)ION_HEAP_TYPE_MULTIMEDIA &&
+	    buffer->heap->type != (unsigned int)ION_HEAP_TYPE_SYSTEM)
 		return 0;
 
 	bug_info = (struct ion_mm_buffer_info *)buffer->priv_virt;
@@ -1197,30 +1355,45 @@ static int ion_mm_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 	do_div(current_ts, 1000000);
 	ION_DUMP(s, "time 3 %lld ms\n", current_ts);
 
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	for (i = 0; i < num_highorders; i++) {
+		struct ion_page_pool *pool = sys_heap->highorder_pools[i];
+
+		ION_DUMP(s,
+				"%d order %u highmem pages in highorder pool = %lu total, dev, 0x%p, heap id: %d\n",
+				atomic_read(&pool->high_count), pool->order,
+				(1 << pool->order) * PAGE_SIZE * atomic_read(&pool->high_count),
+				dev, heap->id);
+		ION_DUMP(s,
+				"%d order %u lowmem pages in highorder pool = %lu total\n",
+				atomic_read(&pool->low_count), pool->order,
+				(1 << pool->order) * PAGE_SIZE * atomic_read(&pool->low_count));
+	}
+#endif
 	for (i = 0; i < num_orders; i++) {
 		struct ion_page_pool *pool = sys_heap->pools[i];
 
 		ION_DUMP(s,
 			 "%d order %u highmem pages in pool = %lu total, dev, 0x%p, heap id: %d\n",
-			 pool->high_count, pool->order,
+				     atomic_read(&pool->high_count), pool->order,
 			 (1 << pool->order) * PAGE_SIZE *
-			 pool->high_count, dev, heap->id);
+				     atomic_read(&pool->high_count), dev, heap->id);
 		ION_DUMP(s,
 			 "%d order %u lowmem pages in pool = %lu total\n",
-			 pool->low_count, pool->order,
+				     atomic_read(&pool->low_count), pool->order,
 			 (1 << pool->order) * PAGE_SIZE *
-			 pool->low_count);
+				     atomic_read(&pool->low_count));
 		pool = sys_heap->cached_pools[i];
 		ION_DUMP(s,
 			 "%d order %u highmem pages in cached_pool = %lu total\n",
-			 pool->high_count, pool->order,
+				     atomic_read(&pool->high_count), pool->order,
 			 (1 << pool->order) * PAGE_SIZE *
-				     pool->high_count);
+				     atomic_read(&pool->high_count));
 		ION_DUMP(s,
 			 "%d order %u lowmem pages in cached_pool = %lu total\n",
-			 pool->low_count, pool->order,
+				     atomic_read(&pool->low_count), pool->order,
 			 (1 << pool->order) * PAGE_SIZE *
-			 pool->low_count);
+				     atomic_read(&pool->low_count));
 	}
 	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
 		ION_DUMP(s, "mm_heap_freelist total_size=%zu\n",
@@ -1337,9 +1510,8 @@ static int ion_mm_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 
 			client->dbg_hnd_cnt++;
 			ION_DUMP(s,
-				 "\thandle=0x%p (id: %d), buffer=0x%p/0x%lx, heap=%u, fd=%4d, ts: %lldms (%d)\n",
+				 "\thandle=0x%p (id: %d), buffer=0x%p, heap=%u, fd=%4d, ts: %lldms (%d)\n",
 				 handle, handle->id, handle->buffer,
-				 (unsigned long)handle->buffer,
 				 handle->buffer->heap->id,
 				 handle->dbg.fd,
 				 handle->dbg.user_ts,
@@ -1377,15 +1549,15 @@ int ion_mm_heap_for_each_pool(int (*fn)(int high, int order,
 		struct ion_page_pool *pool = sys_heap->pools[i];
 
 		fn(1, pool->order, 0,
-		   (1 << pool->order) * PAGE_SIZE * pool->high_count);
+		   (1 << pool->order) * PAGE_SIZE * atomic_read(&pool->high_count));
 		fn(0, pool->order, 0,
-		   (1 << pool->order) * PAGE_SIZE * pool->low_count);
+		   (1 << pool->order) * PAGE_SIZE * atomic_read(&pool->low_count));
 
 		pool = sys_heap->cached_pools[i];
 		fn(1, pool->order, 1,
-		   (1 << pool->order) * PAGE_SIZE * pool->high_count);
+		   (1 << pool->order) * PAGE_SIZE * atomic_read(&pool->high_count));
 		fn(0, pool->order, 1,
-		   (1 << pool->order) * PAGE_SIZE * pool->low_count);
+		   (1 << pool->order) * PAGE_SIZE * atomic_read(&pool->low_count));
 	}
 	return 0;
 }
@@ -1574,25 +1746,25 @@ skip_client_entry:
 
 				ION_DUMP(NULL,
 					 "%d order %u highmem pages in pool = %lu total, dev, 0x%p, heap id: %d\n",
-				pool->high_count, pool->order,
+				atomic_read(&pool->high_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->high_count, dev, mm_heap->id);
+				atomic_read(&pool->high_count), dev, mm_heap->id);
 				ION_DUMP(NULL,
 					 "%d order %u lowmem pages in pool = %lu total\n",
-				pool->low_count, pool->order,
+				atomic_read(&pool->low_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->low_count);
+				atomic_read(&pool->low_count));
 				pool = sys_heap->cached_pools[i];
 				ION_DUMP(NULL,
 					 "%d order %u highmem pages in cached_pool = %lu total\n",
-				pool->high_count, pool->order,
+				atomic_read(&pool->high_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->high_count);
+				atomic_read(&pool->high_count));
 				ION_DUMP(NULL,
 					 "%d order %u lowmem pages in cached_pool = %lu total\n",
-				pool->low_count, pool->order,
+				atomic_read(&pool->low_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->low_count);
+				atomic_read(&pool->low_count));
 			}
 		}
 		if (camera_heap) {
@@ -1611,25 +1783,25 @@ skip_client_entry:
 
 				ION_DUMP(NULL,
 					 "%d order %u highmem pages in pool = %lu total, dev, 0x%p, heap id: %d\n",
-				pool->high_count, pool->order,
+				atomic_read(&pool->high_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->high_count, dev, camera_heap->id);
+				atomic_read(&pool->high_count), dev, camera_heap->id);
 				ION_DUMP(NULL,
 					 "%d order %u lowmem pages in pool = %lu total\n",
-				pool->low_count, pool->order,
+				atomic_read(&pool->low_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->low_count);
+				atomic_read(&pool->low_count));
 				pool = sys_heap->cached_pools[i];
 				ION_DUMP(NULL,
 					 "%d order %u highmem pages in cached_pool = %lu total\n",
-				pool->high_count, pool->order,
+				atomic_read(&pool->high_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-				pool->high_count);
+				atomic_read(&pool->high_count));
 				ION_DUMP(NULL,
 					 "%d order %u lowmem pages in cached_pool = %lu total\n",
-				pool->low_count, pool->order,
+				atomic_read(&pool->low_count), pool->order,
 				(1 << pool->order) * PAGE_SIZE *
-							 pool->low_count);
+							 atomic_read(&pool->low_count));
 			}
 		}
 
@@ -1696,10 +1868,23 @@ struct ion_heap *ion_mm_heap_create(struct ion_platform_heap *unused)
 		heap->cached_pools[i] = pool;
 	}
 
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	heap->highorder_pools = kcalloc(num_highorders, sizeof(struct ion_page_pool *), GFP_KERNEL);
+	if (!heap->highorder_pools)
+		goto err_create_pool;
+
+	if (ion_mm_heap_create_highorder_pools(heap->highorder_pools))
+		goto err_create_highorder_pool;
+#endif
+
 	heap->heap.debug_show = ion_mm_heap_debug_show;
 	ion_comm_init();
 	return &heap->heap;
 
+#ifdef CONFIG_MIGRATE_HIGHORDER
+err_create_highorder_pool:
+	kfree(heap->highorder_pools);
+#endif
 err_create_pool:
 	IONMSG("[ion_mm_heap]: error to create pool\n");
 	for (i = 0; i < num_orders; i++) {
@@ -1723,6 +1908,10 @@ void ion_mm_heap_destroy(struct ion_heap *heap)
 	*sys_heap = container_of(heap, struct ion_system_heap, heap);
 	int i;
 
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	ion_mm_heap_destroy_highorder_pools(sys_heap->highorder_pools);
+	kfree(sys_heap->highorder_pools);
+#endif
 	for (i = 0; i < num_orders; i++)
 		ion_page_pool_destroy(sys_heap->pools[i]);
 	kfree(sys_heap->pools);
@@ -1984,7 +2173,7 @@ long ion_mm_ioctl(struct ion_client *client, unsigned int cmd,
 		}
 
 		if ((int)buffer->heap->type == ION_HEAP_TYPE_MULTIMEDIA) {
-			struct ion_fb_buffer_info *buffer_info =
+			struct ion_mm_buffer_info *buffer_info =
 			    buffer->priv_virt;
 			enum ION_MM_CMDS mm_cmd = param.mm_cmd;
 
@@ -2086,7 +2275,7 @@ long ion_mm_ioctl(struct ion_client *client, unsigned int cmd,
 #endif
 		} else {
 			IONMSG
-			    (": Error. config buffer is not from %c heap.\n",
+			    (": Error. config buffer is not from %d heap.\n",
 			     buffer->heap->type);
 			ret = 0;
 		}
@@ -2177,10 +2366,32 @@ long ion_mm_ioctl(struct ion_client *client, unsigned int cmd,
 			param.get_phys_param.phy_addr = phy_addr;
 
 			mutex_unlock(&buffer->lock);
+		} else if (buffer_type == ION_HEAP_TYPE_MULTIMEDIA_SEC) {
+			struct ion_heap *sec_heap;
+			ion_phys_addr_t phy_addr;
+			size_t len;
+			struct ion_heap_ops *sec_ops;
+			int ret;
+
+			len = param.get_phys_param.len;
+			sec_heap = buffer->heap;
+			if (sec_heap->ops) {
+				sec_ops = sec_heap->ops;
+			} else {
+				IONMSG("%s #%d: buffer err\n",
+				       __func__, __LINE__);
+				ion_drv_put_kernel_handle(kernel_handle);
+				return -EFAULT;
+			}
+
+			mutex_lock(&buffer->lock);
+			ret = sec_ops->phys(sec_heap, buffer, &phy_addr, &len);
+			param.get_phys_param.phy_addr = phy_addr;
+			mutex_unlock(&buffer->lock);
 
 		} else {
 			IONMSG
-			    (": Error. get iova is not from %c heap.\n",
+			    (": Error. get iova is not from %d heap.\n",
 			     buffer->heap->type);
 			ret = -EFAULT;
 		}
@@ -2352,9 +2563,11 @@ int ion_mm_heap_cache_allocate(struct ion_heap *heap,
 	INIT_LIST_HEAD(&pages);
 	start = sched_clock();
 
+#ifndef CONFIG_MIGRATE_HIGHORDER
 	/* add time interval to alloc 64k page in low memory status*/
 	if ((start - alloc_large_fail_ts) < 500000000)
 		max_order = orders[1];
+#endif
 
 	while (size_remaining > 0) {
 		info = alloc_largest_available(sys_heap, buffer,

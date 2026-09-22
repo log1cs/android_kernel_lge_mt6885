@@ -579,9 +579,10 @@ static int pt_is_low(int pt_low_vol, int pt_low_bat, int pt_over_cur)
 {
 	int is_low = 0;
 
-	if (pt_low_bat != BATTERY_PERCENT_LEVEL_0
-			|| pt_low_vol != LOW_BATTERY_LEVEL_0
-			|| pt_over_cur != BATTERY_OC_LEVEL_0) {
+//	if (pt_low_bat != BATTERY_PERCENT_LEVEL_0 /* LGE_CHANGE, 2020-05-18, fixed the flashlight issue, ssora.lee@lge.com */
+	if (pt_low_vol != LOW_BATTERY_LEVEL_0) /* LGE_CHANGE, 2020-07-08, block operation in low voltage case, bk.bae@lge.com */
+		pr_err("pt_low_vol case.\n");
+	if (pt_over_cur != BATTERY_OC_LEVEL_0) {
 		is_low = 1;
 		if (pt_strict)
 			is_low = 2;
@@ -625,7 +626,8 @@ static void pt_low_vol_callback(LOW_BATTERY_LEVEL level)
 		pt_low_vol = LOW_BATTERY_LEVEL_0;
 	} else if (level == LOW_BATTERY_LEVEL_1) {
 		pt_low_vol = LOW_BATTERY_LEVEL_1;
-		pt_trigger();
+		//pt_trigger();
+		pr_err("LOW_BATTERY_LEVEL_1 case.\n"); /*LGE_CHANGE, 2020-07-30, block low voltage trigger, bk.bae@lge.com*/
 	} else if (level == LOW_BATTERY_LEVEL_2) {
 		pt_low_vol = LOW_BATTERY_LEVEL_2;
 		pt_trigger();

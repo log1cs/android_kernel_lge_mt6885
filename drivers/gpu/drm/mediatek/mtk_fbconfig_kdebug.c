@@ -96,7 +96,7 @@
 
 struct dentry *ConfigPara_dbgfs;
 struct CONFIG_RECORD_LIST head_list;
-struct LCM_REG_READ reg_read;
+struct LCM_REG_READ regs_read;
 
 
 struct drm_device *drm_dev;
@@ -108,7 +108,7 @@ struct mtk_ddp_comp *output_comp;
 
 struct PM_TOOL_S {
 	enum DSI_INDEX dsi_id;
-	struct LCM_REG_READ reg_read;
+	struct LCM_REG_READ regs_read;
 	struct mtk_panel_params *pMtk_panel_params;
 };
 static struct PM_TOOL_S pm_params = {

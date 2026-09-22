@@ -15,7 +15,10 @@
 #define __MTK_DP__H__
 
 #include "mtk_dp_common.h"
-
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+#include <linux/extcon.h>
+#define EXT_DD_MAX_COUNT 3
+#endif
 
 #define DPTX_CheckSinkCap_TimeOutCnt		0x3
 
@@ -260,6 +263,7 @@ void mtk_dp_dsc_pps_send(u8 *PPS_128);
 bool mdrv_DPTx_PHY_AutoTest(struct mtk_dp *mtk_dp, u8 ubDPCD_201);
 void mdrv_DPTx_VideoMute(struct mtk_dp *mtk_dp, bool bENABLE);
 void mdrv_DPTx_AudioMute(struct mtk_dp *mtk_dp, bool bENABLE);
+void mdrv_DPTx_OutPutMute(struct mtk_dp *mtk_dp, bool bEnable);
 void mdrv_DPTx_SPKG_SDP(struct mtk_dp *mtk_dp, bool bEnable, u8 ucSDPType,
 	u8 *pHB, u8 *pDB);
 void mdrv_DPTx_I2S_Audio_Config(struct mtk_dp *mtk_dp);
@@ -286,5 +290,7 @@ void mdrv_DPTx_reAuthentication(struct mtk_dp *mtk_dp);
 void mdrv_DPTx_PatternSet(bool enable, int resolution);
 void mdrv_DPTx_set_maxlinkrate(bool enable, int maxlinkrate);
 extern void mhal_DPTx_VideoClock(bool enable, int resolution);
-
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+void mdrv_DPTx_CheckHDCPVersion(struct mtk_dp *mtk_dp, bool only_hdcp1x);
+#endif
 #endif //__MTK_DP__H__

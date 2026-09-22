@@ -17,6 +17,10 @@
 #include "mtk_dp_hal.h"
 #include "ca/tlcDpHdcp.h"
 
+#if defined (CONFIG_LGE_DUAL_SCREEN)
+extern bool is_ds_connected(void);
+#endif
+
 #ifdef DPTX_HDCP_ENABLE
 
 struct hdcp2_info_tx {

@@ -72,6 +72,11 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
 
+#include <net/patchcodeid.h>
+/* 2019-10-22 taegil.kim@lge.com LGP_DATA_SET_OPERATOR_FOR_IPV6 [START] */
+#define VZW_CARRIER 12
+/* 2019-10-22 taegil.kim@lge.com LGP_DATA_SET_OPERATOR_FOR_IPV6 [END] */
+
 static u32 ndisc_hash(const void *pkey,
 		      const struct net_device *dev,
 		      __u32 *hash_rnd);
@@ -1150,6 +1155,9 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 	struct neighbour *neigh = NULL;
 	struct inet6_dev *in6_dev;
 	struct rt6_info *rt = NULL;
+/* 2021-03-04 jaewoo1.kim@lge.com LGP_DATA_TCPIP_DISABLE_ACCEPT_RA_DEFRTR [START] */
+	struct net *net;
+/* 2021-03-04 jaewoo1.kim@lge.com LGP_DATA_TCPIP_DISABLE_ACCEPT_RA_DEFRTR [END] */
 	int lifetime;
 	struct ndisc_options ndopts;
 	int optlen;
@@ -1332,6 +1340,23 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 
 skip_defrtr:
 
+/* 2021-03-04 jaewoo1.kim@lge.com LGP_DATA_TCPIP_DISABLE_ACCEPT_RA_DEFRTR [START] */
+// add for vzw
+	if (sysctl_optr == VZW_CARRIER) {
+		patch_code_id("LPCP-1818@y@c@vmlinux@ndisc.c@1");
+		net = dev_net(in6_dev->dev);
+		rt = rt6_get_dflt_router(&ipv6_hdr(skb)->saddr, skb->dev);
+		if (in6_dev->cnf.accept_ra_min_hop_limit < 256 &&
+			ra_msg->icmph.icmp6_hop_limit) {
+			if (in6_dev->cnf.accept_ra_min_hop_limit <= ra_msg->icmph.icmp6_hop_limit) {
+				in6_dev->cnf.hop_limit = ra_msg->icmph.icmp6_hop_limit;
+			} else {
+				ND_PRINTK(2, warn, "RA: Got route advertisement with lower hop_limit than minimum\n");
+			}
+		}
+	}
+/* 2021-03-04 jaewoo1.kim@lge.com LGP_DATA_TCPIP_DISABLE_ACCEPT_RA_DEFRTR [END] */
+
 	/*
 	 *	Update Reachable Time and Retrans Timer
 	 */
@@ -1472,6 +1497,10 @@ skip_routeinfo:
 		memcpy(&n, ((u8 *)(ndopts.nd_opts_mtu+1))+2, sizeof(mtu));
 		mtu = ntohl(n);
 
+		if (in6_dev->cnf.ra_mtu != mtu) {
+			in6_dev->cnf.ra_mtu = mtu;
+			pr_info("[mtk_net]update ra_mtu to %d\n", in6_dev->cnf.ra_mtu);
+		}
 		if (mtu < IPV6_MIN_MTU || mtu > skb->dev->mtu) {
 			ND_PRINTK(2, warn, "RA: invalid mtu: %d\n", mtu);
 		} else if (in6_dev->cnf.mtu6 != mtu) {

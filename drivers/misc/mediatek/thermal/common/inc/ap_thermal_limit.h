@@ -104,4 +104,20 @@ unsigned int apthermolmt_get_mdla_power_limit(void);
 extern
 unsigned int apthermolmt_get_mdla_min_power(void);
 
+#ifdef CONFIG_LGE_PM_TMR
+/*
+ *	@limit 0 for unlimit
+ */
+extern
+void apthermolmt_set_tmr_cpu_power_boost
+(unsigned int limit);
+
+/*
+ *	@limit 0 for unlimit
+ */
+extern
+void apthermolmt_set_tmr_gpu_power_boost
+(unsigned int limit);
+#endif
+
 #endif	/* __AP_THERMAL_LIMIT_H__ */

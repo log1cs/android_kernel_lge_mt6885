@@ -74,6 +74,10 @@
 
 #include <mt-plat/mtk_pidmap.h>
 
+#ifdef CONFIG_LGE_SREADAHEAD
+#include "sreadahead_prof.h"
+#endif
+
 int suid_dumpable = 0;
 
 static LIST_HEAD(formats);
@@ -150,6 +154,10 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 		goto exit;
 
 	fsnotify_open(file);
+
+#ifdef CONFIG_LGE_SREADAHEAD
+	sreadahead_prof( file, 0, 0);
+#endif
 
 	error = -ENOEXEC;
 
@@ -858,6 +866,10 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
 
 	if (path_noexec(&file->f_path))
 		goto exit;
+
+#ifdef CONFIG_LGE_SREADAHEAD
+	sreadahead_prof( file, 0, 0);
+#endif
 
 	err = deny_write_access(file);
 	if (err)

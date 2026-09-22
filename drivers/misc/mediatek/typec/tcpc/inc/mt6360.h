@@ -379,6 +379,9 @@ enum mt6360_id_rupsel {
  * MT6360_REG_VCONN_CTRL3		(0xE3)
  */
 #define MT6360_VCONN_RVP_EN		BIT(7)
+#ifdef CONFIG_LGE_USB_TYPE_C
+#define MT6360_VCONN_VDDH_ENB	BIT(3)
+#endif
 
 /*
  * MT6360_REG_CTD_CTRL2			(0xEC)

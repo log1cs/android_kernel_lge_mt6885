@@ -639,7 +639,7 @@ android_unbind_enabled_functions(struct android_dev *dev,
 	}
 }
 
-static int android_enable_function(struct android_dev *dev, char *name)
+static int android_enable_function(struct android_dev *dev, const char *name)
 {
 	struct android_usb_function **functions = dev->functions;
 	struct android_usb_function *f;
@@ -1299,16 +1299,24 @@ static const char TAG_NAME[] = "androidboot.usbconfig=";
 
 int acm_shortcut(void)
 {
+	/* TD0040021158 */
+	return 0;
+#if 0
 	char *ptr;
 	char mode = 0;
 
+#ifndef CONFIG_LGE_USB
 #ifdef CONFIG_MTK_BOOT
 	if (get_boot_mode() != META_BOOT)
 		return 0;
 #else
 	return 0;
 #endif
-
+#else
+	return 0;
+#endif
+#endif
+#if 0 // TD#774 Structurally dead code (UNREACHABLE)
 	ptr = strstr(saved_command_line, TAG_NAME);
 	if (ptr) {
 		mode = *(ptr + strlen(TAG_NAME));
@@ -1321,6 +1329,7 @@ int acm_shortcut(void)
 	} else
 		pr_notice("cat not find \"androidboot.usbconfig=\" in cmdline\n");
 	return 0;
+#endif
 }
 
 static int __init meta_usb_init(void)

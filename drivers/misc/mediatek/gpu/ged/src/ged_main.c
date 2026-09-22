@@ -133,6 +133,14 @@ static long ged_dispatch(struct file *pFile,
 					psBridgePackageKM->ui32FunctionID)) {
 				inputBufferSize = sizeof(int) +
 				sizeof(uint32_t) * GE_ALLOC_STRUCT_NUM;
+				// hardcode region_num = GE_ALLOC_STRUCT_NUM,
+				// need check input buffer size
+				if (psBridgePackageKM->i32InBufferSize <
+					inputBufferSize) {
+					GED_LOGE("Failed to regoin_num,it must be %d\n",
+						GE_ALLOC_STRUCT_NUM);
+					goto dispatch_exit;
+				}
 			}
 
 			if (inputBufferSize <= KMALLOC_MAX_SIZE)
@@ -229,6 +237,10 @@ static long ged_dispatch(struct file *pFile,
 		case GED_BRIDGE_COMMAND_QUERY_DVFS_FREQ_PRED:
 			VALIDATE_ARG(QUERY_DVFS_FREQ_PRED);
 			ret = ged_bridge_query_dvfs_freq_pred(pvIn, pvOut);
+			break;
+		case GED_BRIDGE_COMMAND_QUERY_GPU_DVFS_INFO:
+			VALIDATE_ARG(QUERY_GPU_DVFS_INFO);
+			ret = ged_bridge_query_gpu_dvfs_info(pvIn, pvOut);
 			break;
 		case GED_BRIDGE_COMMAND_GE_ALLOC:
 			VALIDATE_ARG(GE_ALLOC);
@@ -356,11 +368,13 @@ static int ged_pdrv_probe(struct platform_device *pdev)
 {
 #ifdef CONFIG_MTK_GPU_OPP_STATS_SUPPORT
 	int ret;
+
 	ret = ged_dvfs_init_opp_cost();
 	if (ret) {
 		GED_LOGE("@%s: failed to probe ged driver (%d)\n",
 		__func__, ret);
 	}
+
 	return ret;
 #else
 	return 0;
@@ -450,7 +464,6 @@ static void ged_exit(void)
 	remove_proc_entry(GED_DRIVER_DEVICE_NAME, NULL);
 
 	platform_driver_unregister(&g_ged_pdrv);
-
 }
 
 static int ged_init(void)

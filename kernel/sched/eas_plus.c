@@ -87,12 +87,6 @@ update_system_overutilized(struct lb_env *env)
 				continue;
 
 			group_util += cpu_util(i);
-			if (cpu_overutilized(i)) {
-				if (capacity_orig_of(i) == min_capacity) {
-					intra_overutil = true;
-					break;
-				}
-			}
 		}
 
 		/*
@@ -446,6 +440,14 @@ static struct sched_entity
 	src_capacity = capacity_orig_of(cpu);
 	cfs_rq = &cpu_rq(cpu)->cfs;
 	se = __pick_first_entity(cfs_rq);
+#ifdef CONFIG_FAIR_GROUP_SCHED
+	if (!se && cfs_rq->h_nr_running > 1) {
+		se = cfs_rq->curr;
+		if (se && group_cfs_rq(se)) {
+			se = __pick_first_entity(group_cfs_rq(se));
+		}
+	}
+#endif	/* CONFIG_FAIR_GROUP_SCHED */
 	while (num_tasks && se) {
 		if (entity_is_task(se) &&
 		    cpumask_intersects(hmp_target_mask,

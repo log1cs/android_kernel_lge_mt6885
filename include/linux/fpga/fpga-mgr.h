@@ -147,6 +147,11 @@ int fpga_mgr_firmware_load(struct fpga_manager *mgr,
 			   struct fpga_image_info *info,
 			   const char *image_name);
 
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+int fpga_mgr_lock(struct fpga_manager *mgr);
+void fpga_mgr_unlock(struct fpga_manager *mgr);
+#endif
+
 struct fpga_manager *of_fpga_mgr_get(struct device_node *node);
 
 struct fpga_manager *fpga_mgr_get(struct device *dev);

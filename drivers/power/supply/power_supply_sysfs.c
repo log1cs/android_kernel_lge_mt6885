@@ -40,11 +40,20 @@
 
 static struct device_attribute power_supply_attrs[];
 
+#ifdef CONFIG_LGE_PM
+/* change index to sync  with POWER_SUPPLY_TYPE_XXX in power_supply.h */
+static const char * const power_supply_type_text[] = {
+	"Unknown", "Battery", "UPS", "Mains", "USB",
+	"USB_DCP", "USB_CDP", "USB_ACA", "USB_C",
+	"USB_PD", "USB_PD_DRP", "BrickID", "Wireless"
+};
+#else /* MediaTek */
 static const char * const power_supply_type_text[] = {
 	"Unknown", "Battery", "UPS", "Mains", "USB",
 	"USB_DCP", "USB_CDP", "USB_ACA", "Wireless", "USB_C",
 	"USB_PD", "USB_PD_DRP", "BrickID"
 };
+#endif
 
 static const char * const power_supply_status_text[] = {
 	"Unknown", "Charging", "Discharging", "Not charging", "Full",
@@ -256,9 +265,44 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(charge_enabled),
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
+#ifdef CONFIG_LGE_PM
+	POWER_SUPPLY_ATTR(battery_charging_enabled),
+	POWER_SUPPLY_ATTR(charging_enabled),
+	POWER_SUPPLY_ATTR(fastchg),
+	POWER_SUPPLY_ATTR(fastchg_support),
+	POWER_SUPPLY_ATTR(first_soc_est_done),
+	POWER_SUPPLY_ATTR(incompatible_chg),
+	POWER_SUPPLY_ATTR(vzw_chg),
+	POWER_SUPPLY_ATTR(raw_capacity),
+	POWER_SUPPLY_ATTR(ttf_capacity),
+#endif
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	POWER_SUPPLY_ATTR(usb_current_max),
+	POWER_SUPPLY_ATTR(store_demo_enabled),
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_ID
+	POWER_SUPPLY_ATTR(batt_id),
+	POWER_SUPPLY_ATTR(valid_batt_id),
+	POWER_SUPPLY_ATTR(check_batt_id_for_aat),
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+	POWER_SUPPLY_ATTR(battery_cycle),
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+	POWER_SUPPLY_ATTR(battery_age),
+	POWER_SUPPLY_ATTR(battery_age_level),
+	POWER_SUPPLY_ATTR(battery_condition),
+#endif
+#ifdef CONFIG_LGE_PM_QNOVO_QNS
+	POWER_SUPPLY_ATTR(qns_fcc),
+	POWER_SUPPLY_ATTR(qns_vfloat),
+#endif
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),
 	POWER_SUPPLY_ATTR(manufacturer),
+#ifdef CONFIG_LGE_PM_BATTERY_ID
+	POWER_SUPPLY_ATTR(battery_type),
+#endif
 	POWER_SUPPLY_ATTR(serial_number),
 };
 

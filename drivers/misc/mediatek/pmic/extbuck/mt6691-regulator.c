@@ -330,6 +330,25 @@ static struct regulator_ops hl7593_regulator_ops = {
 	.is_enabled = mt6691_is_enabled,
 };
 
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+#define REG_CHIP(_id, _vsel)	\
+{						\
+	.desc = {				\
+		.id = _id,			\
+		.name = "mt6691_buck"#_id,	\
+		.n_voltages = 201,		\
+		.ops = &mt6691_regulator_ops,	\
+		.type = REGULATOR_VOLTAGE,	\
+		.owner = THIS_MODULE,		\
+	},					\
+	.vol_reg = MT6691_REG_VSEL##_vsel,	\
+	.vol_mask = 0xFF,			\
+	.mode_reg = MT6691_CTRL_1,		\
+	.mode_bit = (0x3),		\
+	.enable_reg = MT6691_REG_CTRL2,		\
+	.enable_bit = (0x3),		\
+}
+#else
 #define REG_CHIP(_id, _vsel)	\
 {						\
 	.desc = {				\
@@ -347,6 +366,7 @@ static struct regulator_ops hl7593_regulator_ops = {
 	.enable_reg = MT6691_REG_CTRL2,		\
 	.enable_bit = (1 << _vsel),		\
 }
+#endif
 
 #define HL7593_REG_CHIP(_id, _vsel)	\
 {						\

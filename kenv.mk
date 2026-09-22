@@ -1,13 +1,5 @@
-# Copyright (C) 2017 MediaTek Inc.
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License version 2 as
-# published by the Free Software Foundation.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2019 MediaTek Inc.
 
 KERNEL_ENV_PATH := $(call my-dir)
 KERNEL_ROOT_DIR := $(PWD)
@@ -19,23 +11,6 @@ if [ -e $(1) ] && [ -e $(2) ] && cmp -s $(1) $(2); then \
 else \
  rm -f $(1);\
 fi
-endef
-
-define move-kernel-module-files
-v=`cat $(2)/include/config/kernel.release`;\
-for i in `grep -h '\.ko' /dev/null $(2)/.tmp_versions/*.mod`; do \
- o=`basename $$i`;\
- if [ -e $(1)/lib/modules/$$o ] && cmp -s $(1)/lib/modules/$$v/kernel/$$i $(1)/lib/modules/$$o; then \
-  echo $(1)/lib/modules/$$o has no change;\
- else \
-  echo Update $(1)/lib/modules/$$o;\
-  mv -f $(1)/lib/modules/$$v/kernel/$$i $(1)/lib/modules/$$o;\
- fi;\
-done
-endef
-
-define clean-kernel-module-dirs
-rm -rf $(1)/lib/modules/$(if $(2),`cat $(2)/include/config/kernel.release`,*/)
 endef
 
 # '\\' in command is wrongly replaced to '\\\\' in kernel/out/arch/arm/boot/compressed/.piggy.xzkern.cmd
@@ -104,38 +79,32 @@ ifneq ($(strip $(TARGET_NO_KERNEL)),true)
     KERNEL_OUT ?= $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
     KERNEL_ROOT_OUT := $(if $(filter /% ~%,$(KERNEL_OUT)),,$(KERNEL_ROOT_DIR)/)$(KERNEL_OUT)
     ifeq ($(KERNEL_TARGET_ARCH), arm64)
-      ifeq ($(MTK_APPENDED_DTB_SUPPORT), yes)
-        KERNEL_ZIMAGE_OUT := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/Image.gz-dtb
-      else
         KERNEL_ZIMAGE_OUT := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/Image.gz
-      endif
+        KERNEL_DTB_TARGET := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/dts/mediatek/$(TARGET_BOARD_PLATFORM).dtb
     else
-      ifeq ($(MTK_APPENDED_DTB_SUPPORT), yes)
-        KERNEL_ZIMAGE_OUT := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/zImage-dtb
-      else
         KERNEL_ZIMAGE_OUT := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/zImage
-      endif
+        KERNEL_DTB_TARGET := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/dts/$(TARGET_BOARD_PLATFORM).dtb
     endif
 
+    INSTALLED_MTK_DTB_TARGET := $(BOARD_PREBUILT_DTBIMAGE_DIR)/mtk_dtb
     BUILT_KERNEL_TARGET := $(KERNEL_ZIMAGE_OUT).bin
     INSTALLED_KERNEL_TARGET := $(PRODUCT_OUT)/kernel
-    INSTALLED_DTB_OVERLAY_TARGET := $(PRODUCT_OUT)/odmdtbo.img
-    BUILT_DTB_OVERLAY_TARGET := $(KERNEL_OUT)/arch/$(KERNEL_TARGET_ARCH)/boot/dts/odmdtbo.img
     TARGET_KERNEL_CONFIG := $(KERNEL_OUT)/.config
-    KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
     KERNEL_CONFIG_FILE := $(KERNEL_DIR)/arch/$(KERNEL_TARGET_ARCH)/configs/$(word 1,$(KERNEL_DEFCONFIG))
-    #KERNEL_CONFIG_MODULES := $(shell grep ^CONFIG_MODULES=y $(KERNEL_CONFIG_FILE))
-    #KERNEL_MODULES_OUT := $(if $(filter /% ~%,$(TARGET_OUT)),,$(KERNEL_ROOT_DIR)/)$(TARGET_OUT)
-    #KERNEL_MODULES_DEPS := $(if $(wildcard $(KERNEL_MODULES_OUT)/lib/modules/*.ko),$(wildcard $(KERNEL_MODULES_OUT)/lib/modules/*.ko),$(KERNEL_MODULES_OUT)/lib/modules)
-    #KERNEL_MODULES_SYMBOLS_OUT := $(if $(filter /% ~%,$(TARGET_OUT_UNSTRIPPED)),,$(KERNEL_ROOT_DIR)/)$(TARGET_OUT_UNSTRIPPED)/system
+    KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
+    KERNEL_HEADERS_TIMESTAMP := $(KERNEL_HEADERS_INSTALL)/build-timestamp
     KERNEL_MAKE_OPTION := O=$(KERNEL_ROOT_OUT) ARCH=$(KERNEL_TARGET_ARCH) $(ARGS) ROOTDIR=$(KERNEL_ROOT_DIR)
     KERNEL_MAKE_PATH_OPTION := /usr/bin:/bin
     KERNEL_MAKE_OPTION += PATH=$(KERNEL_ROOT_DIR)/$(CLANG_PREBUILT_BIN):$(KERNEL_ROOT_DIR)/$(LINUX_GCC_CROSS_COMPILE_PREBUILTS_BIN):$(KERNEL_MAKE_PATH_OPTION):$$PATH
-  ifdef MTK_DTBO_FEATURE
-    KERNEL_MAKE_OPTION += MTK_DTBO_FEATURE=$(MTK_DTBO_FEATURE)
-  endif
   else
     BUILT_KERNEL_TARGET := $(TARGET_PREBUILT_KERNEL)
-  endif#TARGET_PREBUILT_KERNEL is empty
-    KERNEL_MAKE_OPTION += PROJECT_DTB_NAMES='$(PROJECT_DTB_NAMES)'
-endif#TARGET_NO_KERNEL
+  endif #TARGET_PREBUILT_KERNEL is empty
+  ifeq ($(findstring lge,$(PROJECT_DTB_NAMES)),lge)
+    LGE_DTS_FILES := $(notdir $(basename $(wildcard $(KERNEL_DIR)/arch/$(KERNEL_TARGET_ARCH)/boot/dts/$(PROJECT_DTB_NAMES)/*.dts)))
+    LGE_DT_NAMES := $(addprefix $(PROJECT_DTB_NAMES)/, $(LGE_DTS_FILES))
+    $(info add lge dtbs: $(LGE_DT_NAMES))
+    #KERNEL_MAKE_OPTION += PROJECT_DTB_NAMES="$(LGE_DT_NAMES)"
+  else
+    KERNEL_MAKE_OPTION += PROJECT_DTB_NAMES=$(PROJECT_DTB_NAMES)
+  endif
+endif #TARGET_NO_KERNEL

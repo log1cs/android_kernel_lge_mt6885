@@ -12,11 +12,12 @@
  */
 
 #include <mt-plat/mtk_battery.h>
-#ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
-#include <mt-plat/env.h>
-#endif
-
 #include "ccci_fsm_internal.h"
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
 
 signed int __weak battery_get_bat_voltage(void)
 {
@@ -87,27 +88,6 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 			;
 		ret = 0;
 		break;
-#ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
-	case CCCI_IOC_SIM_LOCK_RANDOM_PATTERN:
-		if (copy_from_user(&val, (void __user *)arg,
-				sizeof(unsigned int)))
-			CCCI_ERROR_LOG(md_id, FSM,
-			"CCCI_IOC_SIM_LOCK_RANDOM_PATTERN: copy_from_user fail\n");
-
-		CCCI_NORMAL_LOG(md_id, FSM,
-			"get SIM lock random pattern %x\n", data);
-
-		ret = snprintf(buffer, sizeof(buffer), "%x", data);
-		if (ret < 0 || ret >= sizeof(buffer)) {
-			CCCI_ERROR_LOG(md_id, FSM,
-				"%s-%d:snprintf fail,ret = %d\n", __func__, __LINE__, ret);
-			ret = -EFAULT;
-			break;
-		}
-		ret = 0;
-		set_env("sml_sync", buffer);
-		break;
-#endif
 	case CCCI_IOC_SET_MD_BOOT_MODE:
 		if (copy_from_user(&data, (void __user *)arg,
 				sizeof(unsigned int))) {
@@ -207,25 +187,15 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case CCCI_IOC_RELOAD_MD_TYPE:
-		data = 0;
 		if (copy_from_user(&data, (void __user *)arg,
 				sizeof(unsigned int))) {
-			CCCI_NORMAL_LOG(md_id, FSM,
+			CCCI_ERROR_LOG(md_id, FSM,
 				"CCCI_IOC_RELOAD_MD_TYPE: copy_from_user fail\n");
 			ret = -EFAULT;
 		} else {
+			ret = set_soc_md_rt_rat_by_idx(md_id, (unsigned int)data);
 			CCCI_NORMAL_LOG(md_id, FSM,
-				"CCCI_IOC_RELOAD_MD_TYPE: 0x%x\n", data);
-			/* add md type check to
-			 * avoid it being changed to illegal value
-			 */
-			if (check_md_type(data) > 0) {
-				if (set_modem_support_cap(md_id, data) == 0)
-					per_md_data->config.load_type = data;
-			} else {
-				CCCI_ERROR_LOG(md_id, FSM,
-				"invalid MD TYPE: 0x%x\n", data);
-			}
+				"CCCI_IOC_RELOAD_MD_TYPE: %d ret:%d\n", data, ret);
 		}
 		break;
 	case CCCI_IOC_SET_MD_IMG_EXIST:
@@ -241,7 +211,7 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 			"CCCI_IOC_SET_MD_IMG_EXIST: set done!\n");
 		break;
 	case CCCI_IOC_GET_MD_IMG_EXIST:
-		data = get_md_type_from_lk(md_id);
+		data = get_md_img_type(md_id);
 		if (data) {
 			memset(&per_md_data->md_img_exist, 0,
 				sizeof(per_md_data->md_img_exist));
@@ -265,14 +235,19 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case CCCI_IOC_GET_MD_TYPE:
-		retry = 600;
-		do {
-			data = get_legacy_md_type(md_id);
-			if (data)
-				break;
-			msleep(500);
-			retry--;
-		} while (retry);
+		data = get_md_img_type(md_id);
+		if (!data)
+			data = 3; //MT6580 using this
+		else {
+			retry = 6000;
+			do {
+				data = get_soc_md_rt_rat_idx(md_id);
+				if (data)
+					break;
+				msleep(50);
+				retry--;
+			} while (retry);
+		}
 		CCCI_NORMAL_LOG(md_id, FSM,
 			"CCCI_IOC_GET_MD_TYPE: %d!\n", data);
 		ret = put_user((unsigned int)data,
@@ -343,7 +318,7 @@ static int fsm_md_data_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 			per_md_data->sim_setting.sim_mode = sim_slot_cfg[1];
 			per_md_data->sim_setting.slot1_mode = sim_slot_cfg[2];
 			per_md_data->sim_setting.slot2_mode = sim_slot_cfg[3];
-			data = ((data << 16)
+			data = (((unsigned int)data << 16)
 					| per_md_data->sim_setting.sim_mode);
 			switch_sim_mode(md_id, (char *)&data, sizeof(data));
 			fsm_monitor_send_message(md_id,
@@ -452,6 +427,25 @@ long ccci_fsm_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 	case CCCI_IOC_MD_RESET:
 		CCCI_NORMAL_LOG(md_id, FSM,
 			"MD reset ioctl called by %s\n", current->comm);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		if (lge_get_crash_handle_status()) {
+			unsigned int modem_status = lge_get_reboot_reason();
+			modem_status &= LGE_CRASH_SYS_MASK;
+
+			if (modem_status == LGE_CRASH_MODEM) {
+				dump_stack();
+				emergency_sync();
+				kernel_restart("LGE Reboot by Modem Exception "
+						"from CCCI_IOC_MD_RESET");
+				/*
+				 * block modem reset to maintain ddr
+				 */
+				while (1) {
+					msleep(10);
+				}
+			}
+		}
+#endif
 		ret = fsm_monitor_send_message(ctl->md_id,
 			CCCI_MD_MSG_RESET_REQUEST, 0);
 		fsm_monitor_send_message(GET_OTHER_MD_ID(ctl->md_id),
@@ -556,6 +550,14 @@ long ccci_fsm_ioctl(int md_id, unsigned int cmd, unsigned long arg)
 			CCCI_MD_MSG_FLIGHT_START_REQUEST, 0);
 		inject_md_status_event(md_id, MD_STA_EV_LEAVE_FLIGHT_E_REQUEST,
 					current->comm);
+		break;
+	/* RILD nodify ccci power off md */
+	case CCCI_IOC_RILD_POWER_OFF_MD:
+		CCCI_NORMAL_LOG(md_id, FSM,
+				"MD will power off ioctl called by %s\n",
+				current->comm);
+		inject_md_status_event(md_id, MD_STA_EV_RILD_POWEROFF_START,
+				current->comm);
 		break;
 	case CCCI_IOC_SET_EFUN:
 		if (copy_from_user(&data, (void __user *)arg,

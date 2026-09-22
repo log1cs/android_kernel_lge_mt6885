@@ -38,6 +38,9 @@
 #include <linux/user_namespace.h>
 #include "internal.h"
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+static int emergency_remount_state = 0;
+#endif
 
 static LIST_HEAD(super_blocks);
 static DEFINE_SPINLOCK(sb_lock);
@@ -908,6 +911,20 @@ cancel_readonly:
 	return retval;
 }
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+int get_emergency_remount_state(void)
+{
+	return emergency_remount_state;
+}
+EXPORT_SYMBOL(get_emergency_remount_state);
+
+void set_emergency_remount_state(int flag)
+{
+	emergency_remount_state = flag;
+}
+EXPORT_SYMBOL(set_emergency_remount_state);
+#endif
+
 int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
 {
 	return do_remount_sb2(NULL, sb, flags, data, force);
@@ -939,6 +956,10 @@ static void do_emergency_remount(struct work_struct *work)
 	}
 	if (p)
 		__put_super(p);
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	set_emergency_remount_state(1);
+#endif
 	spin_unlock(&sb_lock);
 	kfree(work);
 	printk("Emergency Remount complete\n");

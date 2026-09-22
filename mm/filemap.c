@@ -43,6 +43,10 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/filemap.h>
 
+#ifdef CONFIG_LGE_SREADAHEAD
+#include "../fs/sreadahead_prof.h"
+#endif
+
 /*
  * FIXME: remove all knowledge of the buffer layer from the core VM
  */
@@ -2423,6 +2427,9 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 	/*
 	 * mmap read-around
 	 */
+#ifdef CONFIG_LGE_SREADAHEAD
+	ra->ra_pages = min_t(unsigned long, sreadahead_ra_pages, ra->ra_pages);
+#endif
 	fpin = maybe_unlock_mmap_for_io(vmf, fpin);
 	ra->start = max_t(long, 0, offset - ra->ra_pages / 2);
 	ra->size = ra->ra_pages;
@@ -2515,6 +2522,11 @@ int filemap_fault(struct vm_fault *vmf)
 #endif
 		count_vm_event(PGMAJFAULT);
 		count_vm_event(PGFMFAULT);
+
+#ifdef CONFIG_LGE_SREADAHEAD
+		sreadahead_prof(file, 0, 0);
+#endif
+
 		count_memcg_event_mm(vmf->vma->vm_mm, PGMAJFAULT);
 		ret = VM_FAULT_MAJOR;
 		fpin = do_sync_mmap_readahead(vmf);

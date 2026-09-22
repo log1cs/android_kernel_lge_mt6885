@@ -81,12 +81,14 @@ static DEFINE_MUTEX(gimgsensor_mutex);
 
 struct IMGSENSOR  gimgsensor;
 struct IMGSENSOR *pgimgsensor = &gimgsensor;
+MUINT32 last_id;
 
 /*prevent imgsensor race condition in vulunerbility test*/
 struct mutex imgsensor_mutex;
 
 
 DEFINE_MUTEX(pinctrl_mutex);
+DEFINE_MUTEX(oc_mutex);
 
 /************************************************************************
  * Profiling
@@ -415,6 +417,10 @@ imgsensor_sensor_close(struct IMGSENSOR_SENSOR *psensor)
 		imgsensor_mutex_lock(psensor_inst);
 
 		psensor_func->psensor_inst = psensor_inst;
+
+		if (pgimgsensor->imgsensor_oc_irq_enable != NULL)
+			pgimgsensor->imgsensor_oc_irq_enable(
+					psensor->inst.sensor_idx, false);
 
 		ret = psensor_func->SensorClose();
 		if (ret != ERROR_NONE) {
@@ -1076,6 +1082,12 @@ static inline int adopt_CAMERA_HW_GetInfo2(void *pBuf)
 				psensorResolution->SensorVideoWidth,
 				psensorResolution->SensorVideoHeight);
 
+	if (pSensorGetInfo->SensorId <= last_id) {
+		memset(mtk_ccm_name, 0, camera_info_size);
+		pr_debug("memset ok");
+	}
+	last_id = pSensorGetInfo->SensorId;
+
 	/* Add info to proc: camera_info */
 	pmtk_ccm_name = strchr(mtk_ccm_name, '\0');
 	snprintf(pmtk_ccm_name,
@@ -1227,6 +1239,14 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	void *pFeaturePara = NULL;
 	struct ACDK_KD_SENSOR_SYNC_STRUCT *pSensorSyncInfo = NULL;
 	signed int ret = 0;
+	struct SET_SENSOR_PATTERN_SOLID_COLOR *pData = NULL;
+	unsigned long long *pFeaturePara_64 = NULL;
+	void *usr_ptr = NULL;
+	kal_uint32 u4RegLen = 0;
+	char *pPdaf_data = NULL;
+	void *usr_ptr_Reg = NULL;
+	kal_uint32 buf_size = 0;
+	kal_uint32 *pReg = NULL;
 
 	pFeatureCtrl = (struct ACDK_SENSOR_FEATURECONTROL_STRUCT *)pBuf;
 	if (pFeatureCtrl  == NULL) {
@@ -1434,7 +1454,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_PIXEL_RATE:
 	{
 		MUINT32 *pValue = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
 		pValue = kmalloc(sizeof(MUINT32), GFP_KERNEL);
@@ -1487,7 +1507,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	{
 		MUINT32 *pValue0 = NULL;
 		MUINT32 *pValue1 = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
 		pValue0 = kmalloc(sizeof(MUINT32), GFP_KERNEL);
@@ -1521,10 +1541,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_EV_AWB_REF:
 	{
 		struct SENSOR_AE_AWB_REF_STRUCT *pAeAwbRef = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t)(*(pFeaturePara_64));
+		usr_ptr = (void *)(uintptr_t)(*(pFeaturePara_64));
 
 		pAeAwbRef = kmalloc(
 		    sizeof(struct SENSOR_AE_AWB_REF_STRUCT),
@@ -1562,10 +1582,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_CROP_INFO:
 	{
 		struct SENSOR_WINSIZE_INFO_STRUCT *pCrop = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
 
 		pCrop = kmalloc(
 		    sizeof(struct SENSOR_WINSIZE_INFO_STRUCT),
@@ -1600,10 +1620,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_VC_INFO:
 	{
 		struct SENSOR_VC_INFO_STRUCT *pVcInfo = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
 
 		pVcInfo = kmalloc(
 		    sizeof(struct SENSOR_VC_INFO_STRUCT),
@@ -1637,10 +1657,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_PDAF_INFO:
 	{
 		struct SET_PD_BLOCK_INFO_T *pPdInfo = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
 
 		pPdInfo = kmalloc(
 		    sizeof(struct SET_PD_BLOCK_INFO_T),
@@ -1674,13 +1694,12 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_PDAF_REG_SETTING:
 	case SENSOR_FEATURE_SET_PDAF_REG_SETTING:
 	{
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		kal_uint32 u4RegLen = (*pFeaturePara_64);
-		void *usr_ptr_Reg =
+		u4RegLen = (*pFeaturePara_64);
+		usr_ptr_Reg =
 		    (void *)(uintptr_t) (*(pFeaturePara_64 + 1));
-		kal_uint32 *pReg = NULL;
 
 		if (u4RegLen > PDAF_DATA_SIZE) {
 			kfree(pFeaturePara);
@@ -1719,7 +1738,6 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	}
 
 	break;
-
 	case SENSOR_FEATURE_SET_AF_WINDOW:
 	case SENSOR_FEATURE_SET_AE_WINDOW:
 	{
@@ -1727,7 +1745,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 		unsigned long long *pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
 
 		pApWindows = kmalloc(sizeof(MUINT32) * 6, GFP_KERNEL);
 		if (pApWindows == NULL) {
@@ -1762,7 +1780,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 		unsigned long long *pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr =  (void *)(uintptr_t) (*(pFeaturePara_64));
+		usr_ptr =  (void *)(uintptr_t) (*(pFeaturePara_64));
 
 		pExif = kmalloc(
 		    sizeof(struct SENSOR_EXIF_INFO_STRUCT),
@@ -1797,10 +1815,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	{
 
 		struct SENSOR_AE_AWB_CUR_STRUCT *pCurAEAWB = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
 
 		pCurAEAWB = kmalloc(
 		    sizeof(struct SENSOR_AE_AWB_CUR_STRUCT),
@@ -1843,7 +1861,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 		unsigned long long *pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
 
 		pDelayInfo = kmalloc(
 		    sizeof(struct SENSOR_DELAY_INFO_STRUCT),
@@ -1882,10 +1900,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_AE_FLASHLIGHT_INFO:
 	{
 		struct SENSOR_FLASHLIGHT_AE_INFO_STRUCT *pFlashInfo = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *)pFeaturePara;
 
-		void *usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
+		usr_ptr = (void *)(uintptr_t) (*(pFeaturePara_64));
 
 		pFlashInfo = kmalloc(
 		    sizeof(struct SENSOR_FLASHLIGHT_AE_INFO_STRUCT),
@@ -1924,11 +1942,10 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_PDAF_DATA:
 	case SENSOR_FEATURE_GET_4CELL_DATA:
 	{
-		char *pPdaf_data = NULL;
-		unsigned long long *pFeaturePara_64 =
+		pFeaturePara_64 =
 		    (unsigned long long *) pFeaturePara;
-		void *usr_ptr = (void *)(uintptr_t)(*(pFeaturePara_64 + 1));
-		kal_uint32 buf_size = (kal_uint32) (*(pFeaturePara_64 + 2));
+		usr_ptr = (void *)(uintptr_t)(*(pFeaturePara_64 + 1));
+		buf_size = (kal_uint32) (*(pFeaturePara_64 + 2));
 
 		if (buf_size > PDAF_DATA_SIZE) {
 			kfree(pFeaturePara);
@@ -1966,6 +1983,50 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 		*(pFeaturePara_64 + 1) = (uintptr_t) usr_ptr;
 	}
 	break;
+	case SENSOR_FEATURE_SET_TEST_PATTERN:
+		{
+			pr_debug("SENSOR_FEATURE_SET_TEST_PATTERN");
+			pFeaturePara_64 = (unsigned long long *)pFeaturePara;
+			usr_ptr =
+				(void *)(uintptr_t)(*(pFeaturePara_64 + 1));
+			if (usr_ptr) {
+				if (FeatureParaLen < 2 * sizeof(unsigned long long)) {
+					pr_debug("FeatureParaLen is too small %d\n",
+						FeatureParaLen);
+					kfree(pFeaturePara);
+					return -EINVAL;
+				}
+				pData = kmalloc(sizeof(struct SET_SENSOR_PATTERN_SOLID_COLOR),
+					GFP_KERNEL);
+
+				if (pData == NULL) {
+					kfree(pFeaturePara);
+					pr_debug("No color data %d\n");
+					return -ENOMEM;
+				}
+				memset(pData, 0x0,
+					sizeof(struct SET_SENSOR_PATTERN_SOLID_COLOR));
+
+				if (copy_from_user
+					((void *)pData, (void __user *)usr_ptr,
+					sizeof(struct SET_SENSOR_PATTERN_SOLID_COLOR))) {
+					kfree(pData);
+					pr_debug("[CAMERA_HW]ERROR: copy_from_user fail\n");
+				}
+				//pr_debug("%x %x %x %x",
+				//	pData->COLOR_R, pData->COLOR_Gr,
+				//	pData->COLOR_Gb, pData->COLOR_B);
+				if (pFeaturePara_64 != NULL)
+					*(pFeaturePara_64 + 1) = (uintptr_t) pData;
+			}
+			ret = imgsensor_sensor_feature_control(psensor,
+					pFeatureCtrl->FeatureId,
+					(unsigned char *)pFeaturePara,
+					(unsigned int *)&FeatureParaLen);
+
+			kfree(pData);
+		}
+		break;
 
 	default:
 		ret = imgsensor_sensor_feature_control(
@@ -2426,6 +2487,8 @@ static long imgsensor_ioctl(
 			    _IOC_SIZE(a_u4Command))) {
 
 				kfree(pBuff);
+				//0825
+				pBuff = NULL;
 				pr_debug(
 				    "[CAMERA SENSOR] ioctl copy from user failed\n");
 				i4RetValue =  -EFAULT;
@@ -2511,6 +2574,8 @@ static long imgsensor_ioctl(
 	default:
 		pr_debug("No such command %d\n", a_u4Command);
 		i4RetValue = -EPERM;
+		kfree(pBuff);
+		goto CAMERA_HW_Ioctl_EXIT;
 		break;
 	}
 
@@ -2519,11 +2584,12 @@ static long imgsensor_ioctl(
 						  pBuff,
 						_IOC_SIZE(a_u4Command))) {
 		kfree(pBuff);
+		//0825
+		pBuff = NULL;
 		pr_debug("[CAMERA SENSOR] ioctl copy to user failed\n");
 		i4RetValue =  -EFAULT;
 		goto CAMERA_HW_Ioctl_EXIT;
 	}
-
 	kfree(pBuff);
 CAMERA_HW_Ioctl_EXIT:
 	return i4RetValue;

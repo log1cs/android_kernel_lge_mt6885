@@ -1224,9 +1224,11 @@ static int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 }
 
 #ifdef CONFIG_MTK_EMMC_HW_CQ
-static void mmc_start_cmdq_request(struct mmc_host *host,
+static int mmc_start_cmdq_request(struct mmc_host *host,
 				   struct mmc_request *mrq)
 {
+	int ret = 0;
+
 	if (mrq->data) {
 		pr_debug("%s: blksz %d blocks %d flags %08x tsac %lu ms nsac %d\n",
 			mmc_hostname(host), mrq->data->blksz,
@@ -1248,10 +1250,18 @@ static void mmc_start_cmdq_request(struct mmc_host *host,
 	}
 
 	if (likely(host->cmdq_ops->request))
-		host->cmdq_ops->request(host, mrq);
-	else
-		pr_notice("%s: %s: issue request failed\n", mmc_hostname(host),
-				__func__);
+		ret = host->cmdq_ops->request(host, mrq);
+	else {
+		ret = -ENOENT;
+		pr_notice("%s: %s: cmdq request host op is not available\n",
+			mmc_hostname(host), __func__);
+	}
+
+	if (ret)
+		pr_notice("%s: %s: issue request failed, err=%d\n",
+			mmc_hostname(host), __func__, ret);
+
+	return ret;
 }
 #endif
 
@@ -1525,8 +1535,8 @@ int mmc_cmdq_start_req(struct mmc_host *host, struct mmc_cmdq_req *cmdq_req)
 		mrq->cmd->error = -ENOMEDIUM;
 		return -ENOMEDIUM;
 	}
-	mmc_start_cmdq_request(host, mrq);
-	return 0;
+
+	return mmc_start_cmdq_request(host, mrq);
 }
 EXPORT_SYMBOL(mmc_cmdq_start_req);
 
@@ -1694,7 +1704,7 @@ struct mmc_async_req *mmc_start_areq(struct mmc_host *host,
 		start_err =
 			__mmc_start_data_req(host, mrq);
 		if (!cmdq_en)
-			mt_biolog_mmcqd_req_start(host);
+			mt_biolog_mmcqd_req_start(host, mrq);
 	}
 
 	/* Postprocess the old request at this point */
@@ -1728,6 +1738,9 @@ EXPORT_SYMBOL(mmc_start_areq);
  */
 void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 {
+	if (mrq->cmd->retries == 0)
+		mrq->cmd->retries = 3;
+
 	__mmc_start_req(host, mrq);
 
 	if (!mrq->cap_cmd_during_tfr)
@@ -2765,7 +2778,17 @@ void mmc_power_up(struct mmc_host *host, u32 ocr)
 void mmc_power_off(struct mmc_host *host)
 {
 	if (host->ios.power_mode == MMC_POWER_OFF)
+	#ifdef CONFIG_MACH_LGE
+	/* If it is already power-off, skip below.
+	 */
+	{
+		printk(KERN_INFO "[LGE][MMC][%-18s( )] host->index:%d, already power-off, skip below\n", __func__, host->index);
 		return;
+	}
+	#else
+		return;
+	#endif
+
 
 	mmc_pwrseq_power_off(host);
 
@@ -3101,7 +3124,7 @@ static int mmc_cmdq_send_erase_cmd(struct mmc_cmdq_req *cmdq_req,
 	if (err) {
 		pr_notice("%s: group start error %d, status %#x\n",
 				__func__, err, cmd->resp[0]);
-		return -EIO;
+		return (err == -EBADSLT) ? err : -EIO;
 	}
 	return 0;
 }
@@ -3152,7 +3175,8 @@ static int mmc_cmdq_do_erase(struct mmc_cmdq_req *cmdq_req,
 		if (err || (cmd->resp[0] & 0xFDF92000)) {
 			pr_notice("error %d requesting status %#x\n",
 				err, cmd->resp[0]);
-			err = -EIO;
+			if (err != -EBADSLT)
+				err = -EIO;
 			goto out;
 		}
 		/* Timeout if the device never becomes ready for data and
@@ -3869,6 +3893,10 @@ int _mmc_detect_card_removed(struct mmc_host *host)
 		mmc_card_set_removed(host->card);
 		pr_debug("%s: card remove detected\n", mmc_hostname(host));
 	}
+
+	//#ifdef CONFIG_MACH_LGE
+	//printk(KERN_INFO "[LGE][MMC][%-18s( )] end, mmc%d, return %d\n", __func__, host->index, ret);
+	//#endif
 
 	return ret;
 }

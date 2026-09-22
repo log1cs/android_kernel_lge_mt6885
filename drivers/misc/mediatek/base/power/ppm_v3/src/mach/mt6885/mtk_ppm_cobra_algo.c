@@ -23,6 +23,12 @@
 #include "mtk_ppm_internal.h"
 #include "mtk_upower.h"
 
+#ifdef CONFIG_LGE_PM
+#ifdef CONFIG_MTK_BOOT
+#include <mt-plat/mtk_boot_common.h>
+#endif
+#endif
+
 
 struct ppm_cobra_data *cobra_tbl;
 struct ppm_cobra_lookup cobra_lookup_data;
@@ -640,6 +646,16 @@ void ppm_cobra_init(void)
 {
 	int i, j;
 
+#ifdef CONFIG_LGE_PM
+	bool dump_table = true;
+
+#ifdef CONFIG_MTK_BOOT
+	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT ||
+			get_boot_mode() == LOW_POWER_OFF_CHARGING_BOOT)
+		dump_table = false;
+#endif
+#endif
+
 #ifdef PPM_SSPM_SUPPORT
 	/* remap sram for cobra */
 	cobra_tbl = ioremap_nocache(PPM_COBRA_TBL_SRAM_ADDR,
@@ -686,6 +702,12 @@ void ppm_cobra_init(void)
 					(dyn_c + lkg_c)) / 1000;
 				cobra_tbl->basic_pwr_tbl[i][j].perf_idx =
 					cap * core;
+
+#ifdef CONFIG_LGE_PM
+				/* do not print basic power table */
+				if (!dump_table)
+					continue;
+#endif
 
 				ppm_ver("[%d][%d] = (%d, %d)\n", i, j,
 				cobra_tbl->basic_pwr_tbl[i][j].power_idx,

@@ -969,6 +969,16 @@ KBUILD_CPPFLAGS += $(ARCH_CPPFLAGS) $(KCPPFLAGS)
 KBUILD_AFLAGS   += $(ARCH_AFLAGS)   $(KAFLAGS)
 KBUILD_CFLAGS   += $(ARCH_CFLAGS)   $(KCFLAGS)
 
+# Add LGE target feature
+LGE_PLATFORM_NAME = $(shell echo $(LGE_TARGET_PLATFORM) | tr a-z A-Z)
+ifeq ($(LGE_LAMP_DEVICE),no)
+LGE_DEVICE_NAME = $(patsubst %N,%,$(shell echo $(LGE_TARGET_DEVICE) | tr a-z A-Z))
+else
+LGE_DEVICE_NAME = $(patsubst %N,%,$(patsubst M%,%,$(shell echo $(LGE_TARGET_DEVICE) | tr a-z A-Z)))
+endif
+KBUILD_CFLAGS += -DTARGET_$(LGE_PLATFORM_NAME)
+KBUILD_CFLAGS += -DTARGET_$(LGE_PLATFORM_NAME)_$(LGE_DEVICE_NAME)
+
 # Use --build-id when available.
 LDFLAGS_BUILD_ID := $(patsubst -Wl$(comma)%,%,\
 			      $(call cc-ldoption, -Wl$(comma)--build-id,))

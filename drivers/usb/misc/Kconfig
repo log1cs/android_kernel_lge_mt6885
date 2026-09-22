@@ -265,3 +265,11 @@ config USB_CHAOSKEY
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called chaoskey.
+
+source "drivers/usb/misc/anx7418/Kconfig"
+source "drivers/usb/misc/tusb546/Kconfig"
+
+config LGE_USB_MOISTURE_FUSB251
+        bool "USB Type-C Moisture Detection Switch Driver"
+        help
+          The FUSB251 is an integrated Moisture Detection switch.

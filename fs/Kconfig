@@ -313,4 +313,7 @@ source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 source "fs/unicode/Kconfig"
 
+config LGE_SREADAHEAD
+	bool "LGE SRA(Super Read Ahead) Feature for booting time enhancement"
+	default n
 endmenu

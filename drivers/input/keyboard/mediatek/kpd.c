@@ -155,7 +155,11 @@ void vol_down_long_press(unsigned long pressed)
 #ifdef CONFIG_KPD_PWRKEY_USE_PMIC
 void kpd_pwrkey_pmic_handler(unsigned long pressed)
 {
+#ifdef CONFIG_MACH_LGE
+	kpd_notice("Power Key generate, pressed=%ld\n", pressed);
+#else
 	kpd_print("Power Key generate, pressed=%ld\n", pressed);
+#endif
 	if (!kpd_input_dev) {
 		kpd_print("KPD input device not ready\n");
 		return;
@@ -166,7 +170,11 @@ void kpd_pwrkey_pmic_handler(unsigned long pressed)
 
 void kpd_pmic_rstkey_handler(unsigned long pressed)
 {
+#ifdef CONFIG_MACH_LGE
+	kpd_notice("PMIC reset Key generate, pressed=%ld\n", pressed);
+#else
 	kpd_print("PMIC reset Key generate, pressed=%ld\n", pressed);
+#endif
 	if (!kpd_input_dev) {
 		kpd_print("KPD input device not ready\n");
 		return;
@@ -212,7 +220,11 @@ static void kpd_keymap_handler(unsigned long data)
 				continue;
 			input_report_key(kpd_input_dev, linux_keycode, pressed);
 			input_sync(kpd_input_dev);
+#ifdef CONFIG_MACH_LGE
+			kpd_notice("report Linux keycode = %d, pressed = %d\n", linux_keycode, pressed);
+#else
 			kpd_print("report Linux keycode = %d\n", linux_keycode);
+#endif
 
 #ifdef CONFIG_LONG_PRESS_MODE_EN
 			if (pressed) {
@@ -428,7 +440,7 @@ static int kpd_pdrv_probe(struct platform_device *pdev)
 #endif
 	/* register IRQ and EINT */
 	kpd_set_debounce(kpd_dts_data.kpd_key_debounce);
-	err = request_irq(kp_irqnr, kpd_irq_handler, IRQF_TRIGGER_NONE,
+	err = request_irq(kp_irqnr, kpd_irq_handler, IRQF_TRIGGER_NONE|IRQF_NO_SUSPEND,
 			KPD_NAME, NULL);
 	if (err) {
 		kpd_notice("register IRQ failed (%d)\n", err);

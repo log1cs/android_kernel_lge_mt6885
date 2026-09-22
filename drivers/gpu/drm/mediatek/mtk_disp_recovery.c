@@ -25,6 +25,9 @@
 #include <uapi/linux/sched/types.h>
 #include <drm/drmP.h>
 #include <linux/soc/mediatek/mtk-cmdq.h>
+#if defined(CONFIG_MACH_MT6877)
+#include <linux/pinctrl/consumer.h>
+#endif
 
 #include "mtk_drm_drv.h"
 #include "mtk_drm_ddp_comp.h"
@@ -34,9 +37,51 @@
 #include "mtk_drm_mmp.h"
 #include "mtk_drm_fbdev.h"
 #include "mtk_drm_trace.h"
+#include "mtk_disp_recovery.h"
+#include "mtk_dsi.h"
+
+#ifdef CONFIG_LEDS_MTK_DISP		
+#include "leds-mtk-disp.h"		
+#endif
 
 #define ESD_TRY_CNT 5
 #define ESD_CHECK_PERIOD 2000 /* ms */
+
+#if defined(CONFIG_LGE_DISPLAY_RECOVERY)
+static struct drm_crtc *g_crtc = NULL;
+static int mtk_drm_esd_recover(struct drm_crtc *crtc);
+extern int lge_get_brightness_mapping_value(int brightness_256);
+#endif
+
+#if defined(CONFIG_LGE_DISPLAY_RECOVERY)
+void mtk_drm_report_panel_dead(void)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(g_crtc);
+	struct mtk_panel_ext *panel_ext = NULL;
+
+	if(!g_crtc) {
+		DDPPR_ERR("crtc is null, exit recovery\n");
+		return;
+	}
+
+	panel_ext = mtk_crtc->panel_ext;
+	if (!(panel_ext && panel_ext->params)) {
+		DDPPR_ERR("can't find panel_ext handle, exit recovery\n");
+		return;
+	}
+
+	panel_ext->params->is_state_recovery = true;
+
+	mtk_drm_esd_recover(g_crtc);
+#ifdef CONFIG_LEDS_MTK_DISP
+	mtkfb_set_backlight_level(lge_get_last_brightness());
+#endif
+
+	panel_ext->params->is_state_recovery = false;
+
+	printk("[ESD]ESD panel reset start!!\n");
+}
+#endif
 
 /* pinctrl implementation */
 long _set_state(struct drm_crtc *crtc, const char *name)
@@ -339,7 +384,10 @@ static int mtk_drm_request_eint(struct drm_crtc *crtc)
 		return -EINVAL;
 	}
 
-	of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
+	ret = of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
+	if (ret)
+		DDPPR_ERR("debounce not found\n");
+
 	esd_ctx->eint_irq = irq_of_parse_and_map(node, 0);
 
 	ret = request_irq(esd_ctx->eint_irq, _esd_check_ext_te_irq_handler,
@@ -400,6 +448,10 @@ done:
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_RECOVERY) && IS_ENABLED(CONFIG_LEDS_MTK_DISP)
+extern int getLastBrightness(char *name);
+#endif
+
 static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 {
 	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
@@ -429,7 +481,7 @@ static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	if (drm_crtc_index(crtc) == 0)
 		mtk_disp_set_hrt_bw(mtk_crtc,
-			mtk_crtc->qos_ctx->last_hrt_req);
+				    mtk_crtc->qos_ctx->last_hrt_req);
 #endif
 
 	mtk_drm_crtc_enable(crtc);
@@ -459,19 +511,36 @@ static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 	mtk_drm_idlemgr_kick(__func__, &mtk_crtc->base, 0);
 	CRTC_MMP_MARK(drm_crtc_index(crtc), esd_recovery, 0, 5);
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_RECOVERY) && IS_ENABLED(CONFIG_LEDS_MTK_DISP)
+	{
+		int last_brightness = getLastBrightness("lcd-backlight");
+		if (last_brightness > 0)
+			mtk_ddp_comp_io_cmd(output_comp, NULL, DSI_SET_BL, &last_brightness);
+	}
+#endif
+
 done:
 	CRTC_MMP_EVENT_END(drm_crtc_index(crtc), esd_recovery, 0, ret);
 
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_RECOVERY)
+static bool g_force_recovery = 0;
+void force_recovery(void)
+{
+	pr_info("%s\n", __func__);
+	g_force_recovery = 1;
+}
+#endif
 static int mtk_drm_esd_check_worker_kthread(void *data)
 {
 	struct sched_param param = {.sched_priority = 87};
 	struct drm_crtc *crtc = (struct drm_crtc *)data;
-	struct mtk_drm_private *private = crtc->dev->dev_private;
-	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
-	struct mtk_drm_esd_ctx *esd_ctx = mtk_crtc->esd_ctx;
+	struct mtk_drm_private *private = NULL;
+	struct mtk_drm_crtc *mtk_crtc = NULL;
+	struct mtk_drm_esd_ctx *esd_ctx = NULL;
+	struct mtk_panel_ext *panel_ext = NULL;
 	int ret = 0;
 	int i = 0;
 	int recovery_flg = 0;
@@ -480,7 +549,15 @@ static int mtk_drm_esd_check_worker_kthread(void *data)
 
 	if (!crtc) {
 		DDPPR_ERR("%s invalid CRTC context, stop thread\n", __func__);
+		return -EINVAL;
+	}
+	private = crtc->dev->dev_private;
+	mtk_crtc = to_mtk_crtc(crtc);
+	esd_ctx = mtk_crtc->esd_ctx;
+	panel_ext = mtk_crtc->panel_ext;
 
+	if (unlikely(!(panel_ext && panel_ext->params))) {
+		DDPPR_ERR("%s invalid  panel_ext handle\n", __func__);
 		return -EINVAL;
 	}
 
@@ -490,7 +567,8 @@ static int mtk_drm_esd_check_worker_kthread(void *data)
 			esd_ctx->check_task_wq,
 			atomic_read(&esd_ctx->check_wakeup) &&
 			(atomic_read(&esd_ctx->target_time) ||
-				esd_ctx->chk_mode == READ_EINT));
+			(panel_ext->params->cust_esd_check == 0) &&
+			 (esd_ctx->chk_mode == READ_EINT)));
 		if (ret < 0) {
 			DDPINFO("[ESD]check thread waked up accidently\n");
 			continue;
@@ -513,6 +591,14 @@ static int mtk_drm_esd_check_worker_kthread(void *data)
 		do {
 			ret = mtk_drm_esd_check(crtc);
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_RECOVERY)
+			if (!ret) {
+				ret = g_force_recovery;
+				if (ret)
+					pr_info("%s: force recovery\n", __func__);
+			}
+			g_force_recovery = 0;
+#endif
 			if (!ret) /* success */
 				break;
 
@@ -598,6 +684,10 @@ static void mtk_disp_esd_chk_init(struct drm_crtc *crtc)
 		return;
 	}
 
+#if defined(CONFIG_LGE_DISPLAY_RECOVERY)
+	g_crtc = crtc;
+#endif
+
 	if (_lcm_need_esd_check(panel_ext) == 0)
 		return;
 
@@ -618,10 +708,14 @@ static void mtk_disp_esd_chk_init(struct drm_crtc *crtc)
 	atomic_set(&esd_ctx->check_wakeup, 0);
 	atomic_set(&esd_ctx->ext_te_event, 0);
 	atomic_set(&esd_ctx->target_time, 0);
+#if defined(CONFIG_LGE_DISPLAY_RECOVERY)
+	esd_ctx->chk_mode = panel_ext->params->chk_mode;
+#else
 	if (panel_ext->params->cust_esd_check == 1)
 		esd_ctx->chk_mode = READ_LCM;
 	else
 		esd_ctx->chk_mode = READ_EINT;
+#endif
 	mtk_drm_request_eint(crtc);
 
 	wake_up_process(esd_ctx->disp_esd_chk_task);
@@ -650,3 +744,45 @@ void mtk_disp_chk_recover_init(struct drm_crtc *crtc)
 	    drm_crtc_index(&mtk_crtc->base) == 0)
 		mtk_disp_esd_chk_init(crtc);
 }
+
+#if defined(CONFIG_LGE_DISPLAY_RECOVERY)
+static ssize_t store_esd_recovery(struct device *dev,
+                struct device_attribute *attr, const char *buf, size_t size)
+{
+        int data = 0;
+
+       sscanf(buf, "%d", &data);
+
+        if(data > 0)
+               mtk_drm_report_panel_dead();
+
+        return size;
+}
+static DEVICE_ATTR(esd_recovery, S_IWUSR, NULL, store_esd_recovery);
+
+int lge_esd_recovery_create_sysfs(struct mtk_dsi *dsi, struct class *class_panel)
+{
+       int rc = 0;
+        static struct device *esd_sysfs_dev = NULL;
+        struct mtk_panel_ext *panel= NULL;
+
+        if (!dsi || !dsi->ext) {
+                pr_err("panel is NULL\n");
+                return rc;
+        }
+
+        panel = dsi->ext;
+
+       if(!esd_sysfs_dev) {
+               esd_sysfs_dev = device_create(class_panel, NULL, 0, dsi, "esd_recovery");
+                if(IS_ERR(esd_sysfs_dev)) {
+                        pr_err("Failed to create dev(esd_sysfs_dev)!\n");
+                } else {
+                       if ((rc = device_create_file(esd_sysfs_dev,
+                                                       &dev_attr_esd_recovery)) < 0)
+                               pr_err("add esd_recovery node fail!");
+               }
+       }
+       return rc;
+}
+#endif

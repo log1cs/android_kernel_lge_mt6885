@@ -26,6 +26,10 @@
 
 #include "clk.h"
 
+#ifdef CONFIG_PROC_FS
+#include <linux/proc_fs.h>
+#endif
+
 static DEFINE_SPINLOCK(enable_lock);
 static DEFINE_MUTEX(prepare_lock);
 
@@ -68,7 +72,7 @@ struct clk_core {
 	struct hlist_node	child_node;
 	struct hlist_head	clks;
 	unsigned int		notifier_count;
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 	struct dentry		*dentry;
 	struct hlist_node	debug_node;
 #endif
@@ -1996,7 +2000,7 @@ EXPORT_SYMBOL_GPL(clk_is_match);
 
 /***        debugfs support        ***/
 
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 #include <linux/debugfs.h>
 
 static struct dentry *rootdir;
@@ -2073,6 +2077,20 @@ static const struct file_operations clk_summary_fops = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
+
+#ifdef CONFIG_PROC_FS
+static int procfs_clk_summary_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, clk_summary_show, PDE_DATA(inode));
+}
+
+static const struct file_operations procfs_clk_summary_fops = {
+	.open		= procfs_clk_summary_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
 
 static void clk_dump_one(struct seq_file *s, struct clk_core *c, int level)
 {
@@ -2317,6 +2335,10 @@ static int __init clk_debug_init(void)
 				&clk_summary_fops);
 	if (!d)
 		return -ENOMEM;
+
+#ifdef CONFIG_PROC_FS
+		proc_create_data("clk_summary", 0444, NULL, &procfs_clk_summary_fops, &all_lists);
+#endif
 
 	d = debugfs_create_file("clk_dump", 0444, rootdir, &all_lists,
 				&clk_dump_fops);

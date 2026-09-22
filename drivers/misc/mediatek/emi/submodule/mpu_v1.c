@@ -33,6 +33,13 @@
 #include "mpu_v1.h"
 #include <mpu_platform.h>
 
+#if defined(CONFIG_LGE_HANDLE_PANIC) && \
+	defined(CONFIG_LGE_HANDLE_PANIC_MTK_EMI_MPU)
+#include <linux/delay.h>
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 _Static_assert(EMI_MPU_DOMAIN_NUM <= 2048, "EMI_MPU_DOMAIN_NUM is over 2048");
 _Static_assert(EMI_MPU_REGION_NUM <= 256, "EMI_MPU_REGION_NUM is over 256");
 
@@ -181,6 +188,26 @@ static void check_violation(void)
 			"CRDISPATCH_KEY:EMI MPU Violation Issue/",
 			master_name);
 	}
+#endif
+
+#if defined(CONFIG_LGE_HANDLE_PANIC) && \
+	defined(CONFIG_LGE_HANDLE_PANIC_MTK_EMI_MPU)
+	pr_err("EMI MPU violation\n");
+	pr_err("%s = 0x%x, %s = 0x%x, %s = 0x%x, %s = 0x%llx\n",
+			"EMI_MPUS", mpus, "EMI_MPUT", mput,
+			"EMI_MPUT_2ND", mput_2nd, "vio_addr", vio_addr);
+	pr_err("CRDISPATCH_KEY:EMI MPU Violation Issue/%s\n", master_name);
+
+	lge_set_reboot_reason(LGE_CRASH_EMI_MPU_VIOLATION);
+	if (lge_get_crash_handle_status()) {
+		dump_stack();
+		emergency_sync();
+		msleep(10);
+		kernel_restart("LGE Reboot by EMI MPU Violation");
+
+		while (1) msleep(10);
+	}
+
 #endif
 
 	clear_violation();

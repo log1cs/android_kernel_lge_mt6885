@@ -34,6 +34,10 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_LGE_SREADAHEAD
+#include "sreadahead_prof.h"
+#endif
+
 int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
 		unsigned int time_attrs, struct file *filp)
 {
@@ -1097,6 +1101,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 		} else {
 			fsnotify_open(f);
 			fd_install(fd, f);
+
+#ifdef CONFIG_LGE_SREADAHEAD
+			sreadahead_prof( f, 0, 0);
+#endif
 		}
 	}
 	putname(tmp);

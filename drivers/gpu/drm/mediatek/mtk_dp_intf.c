@@ -321,7 +321,7 @@ void mtk_dp_inf_video_clock(struct mtk_dp_intf *dp_intf)
 		break;
 	case SINK_1080_2460: /* pix clk: 43.5275M, dpi clk: 43.5275*4M */
 		clksrc = TVDPLL_D16;
-		con1 = 0x821AC941;
+		con1 = 0x821AC955;
 		break;
 	case SINK_1920_1200: /* pix clk: 43.5275M, dpi clk: 43.5275*4M */
 		clksrc = TVDPLL_D16;

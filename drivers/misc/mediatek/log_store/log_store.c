@@ -364,6 +364,50 @@ static int pl_lk_log_show(struct seq_file *m, void *v)
 }
 
 
+#ifdef CONFIG_LGE_BOOTLOADER_LOG
+static int pl_lk_log_print(void)
+{
+	char *buffer;
+	char *token;
+	char *ct = "\n";
+	char *find_delim;
+
+	if (dram_curlog_header == NULL || pbuff == NULL) {
+		pr_info("%s : log buff is null.\n", __func__);
+		return 0;
+	}
+	pr_info("---------------- Preloader & LK Log Start !!! ----------------\n");
+	pr_info("show buff sig 0x%x, size 0x%x,pl size 0x%x, lk size 0x%x!\n",
+			dram_curlog_header->sig, dram_curlog_header->buff_size,
+			dram_curlog_header->sz_pl, dram_curlog_header->sz_lk);
+
+	if (dram_log_store_status == BUFF_READY) {
+		if (dram_curlog_header->buff_size >= (dram_curlog_header->off_pl
+		+ dram_curlog_header->sz_pl
+		+ dram_curlog_header->sz_lk)) {
+			buffer = (char *)pbuff+dram_curlog_header->off_pl;
+
+			buffer[dram_curlog_header->sz_pl + dram_curlog_header->sz_lk - 1] = '\0';
+
+			while (buffer) {
+				find_delim = strstr(buffer, ct);
+				token = strsep(&buffer, ct);
+				if (!token) {
+					pr_info("%s : token %p\n", __func__, token);
+					break;
+				}
+				pr_info("%s\n", token);
+				/* restore from null to '\n' */
+				if (find_delim) token[strlen(token)] = '\n';
+			}
+		}
+	}
+
+	pr_info("---------------- Preloader & LK Log End !!! ----------------\n");
+	return 0;
+}
+#endif
+
 static int pl_lk_file_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, pl_lk_log_show, inode->i_private);
@@ -487,7 +531,9 @@ static int __init log_store_late_init(void)
 		pr_notice("log_store: failed to create proc entry\n");
 		return 1;
 	}
-
+#ifdef CONFIG_LGE_BOOTLOADER_LOG
+	pl_lk_log_print();
+#endif
 	return 0;
 }
 

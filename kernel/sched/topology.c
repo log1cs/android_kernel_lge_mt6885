@@ -1092,8 +1092,12 @@ static void init_sched_groups_energy(int cpu, struct sched_domain *sd,
 
 		cpumask_xor(&mask, sched_group_span(sg), get_cpu_mask(cpu));
 
-		for_each_cpu(i, &mask)
-			BUG_ON(!sched_group_energy_equal(sge,fn(i)));
+		for_each_cpu(i, &mask){
+			if(unlikely(!sched_group_energy_equal(sge,fn(i)))){
+				sge = fn(cpu);
+				BUG_ON(!sched_group_energy_equal(sge,fn(i)));
+			}
+		}
 	}
 
 	/* Check that energy efficiency (capacity/power) is monotonically

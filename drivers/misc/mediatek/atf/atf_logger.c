@@ -33,6 +33,10 @@
 #define ATF_LOG_RESERVED_MEMORY_KEY "mediatek,atf-log-reserved"
 #endif
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 /* #define ATF_LOGGER_DEBUG */
 #define ATF_LOG_CTRL_BUF_SIZE 512
 #define ATF_CRASH_MAGIC_NO	0xdead1abf
@@ -499,6 +503,11 @@ static int __init atf_logger_probe(struct platform_device *pdev)
 
 	/* initial wait queue */
 	init_waitqueue_head(&atf_log_wq);
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	lge_set_atf_info((const u32)atf_buf_vir_ctrl->info.atf_log_addr,
+			(const u32)atf_buf_vir_ctrl->info.atf_log_size);
+#endif
 
 	/* create /proc/atf_log */
 	atf_log_proc_dir = proc_mkdir("atf_log", NULL);

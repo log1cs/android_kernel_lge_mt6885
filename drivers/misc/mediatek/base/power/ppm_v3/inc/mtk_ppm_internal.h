@@ -166,6 +166,9 @@ enum {
 enum ppm_policy {
 	PPM_POLICY_PTPOD = 0, /* highest priority */
 	PPM_POLICY_UT,
+#ifdef CONFIG_LGE_PM_MTK_GAME_MODE
+	PPM_POLICY_AUTO_GAME_LIMIT,
+#endif
 	PPM_POLICY_FORCE_LIMIT,
 	PPM_POLICY_PWR_THRO,
 	PPM_POLICY_THERMAL,
@@ -291,8 +294,10 @@ extern char *ppm_copy_from_user_for_proc(
 
 /* platform dependent APIs */
 extern void ppm_update_req_by_pwr(struct ppm_policy_req *req);
+extern int ppm_find_pwr_idx(struct ppm_cluster_status *cluster_status);
 extern int ppm_get_min_pwr_idx(void);
 extern int ppm_get_max_pwr_idx(void);
+extern int ppm_get_pwr_idx(int idx_num);
 
 /* main */
 extern int ppm_main_freq_to_idx(unsigned int cluster_id,

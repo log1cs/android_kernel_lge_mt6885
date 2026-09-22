@@ -643,9 +643,13 @@ void mt_gpufreq_set_timestamp(void)
 {
 	gpufreq_pr_debug("@%s\n", __func__);
 
-	/* write 1 into 0x13fb_f130 bit 0 to enable timestamp register */
-	/* timestamp will be used by clGetEventProfilingInfo*/
-	writel(0x00000001, g_mfg_base + 0x130);
+	/* timestamp will be used by clGetEventProfilingInfo
+	 * 0x13fb_f130
+	 * [0] : write 1 to enable timestamp register
+	 * [1] : 0: timer from internal module
+	 *     : 1: timer from soc
+	 */
+	writel(0x00000003, g_mfg_base + 0x130);
 }
 
 void mt_gpufreq_check_bus_idle(void)
@@ -2309,6 +2313,25 @@ out:
 	return (ret < 0) ? ret : count;
 }
 
+#ifdef CONFIG_LGE_VSYNC_SKIP
+/*********************************
+ * show current/max gpu frequency
+ *********************************/
+static int mt_gpufreq_cur_freq_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", g_cur_opp_freq);
+
+	return 0;
+}
+
+static int mt_gpufreq_max_freq_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", g_opp_table[g_segment_max_opp_idx].gpufreq_khz);
+
+	return 0;
+}
+#endif
+
 /*
  * PROCFS : initialization
  */
@@ -2323,6 +2346,10 @@ PROC_FOPS_RW(gpufreq_aging_enable);
 PROC_FOPS_RW(gpufreq_limit_table);
 PROC_FOPS_RO(gpufreq_dfd_test);
 PROC_FOPS_RW(gpufreq_dfd_force_dump);
+#ifdef CONFIG_LGE_VSYNC_SKIP
+PROC_FOPS_RO(gpufreq_cur_freq);
+PROC_FOPS_RO(gpufreq_max_freq);
+#endif
 
 static int __mt_gpufreq_create_procfs(void)
 {
@@ -2346,6 +2373,10 @@ static int __mt_gpufreq_create_procfs(void)
 		PROC_ENTRY(gpufreq_limit_table),
 		PROC_ENTRY(gpufreq_dfd_test),
 		PROC_ENTRY(gpufreq_dfd_force_dump),
+#ifdef CONFIG_LGE_VSYNC_SKIP
+		PROC_ENTRY(gpufreq_cur_freq),
+		PROC_ENTRY(gpufreq_max_freq),
+#endif
 	};
 
 	dir = proc_mkdir("gpufreq", NULL);
@@ -3004,7 +3035,7 @@ static void __mt_gpufreq_kick_pbm(int enable)
 	unsigned int power;
 	unsigned int cur_freq;
 	unsigned int cur_vgpu;
-	unsigned int found = 0;
+	bool found = 0;
 	int tmp_idx = -1;
 	int i;
 

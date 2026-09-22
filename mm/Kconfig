@@ -808,3 +808,22 @@ config PERCPU_STATS
 	  This feature collects and exposes statistics via debugfs. The
 	  information includes global and per chunk statistics, which can
 	  be used to help understand percpu memory usage.
+config MIGRATE_HIGHORDER
+	bool "Enable migrate highorder"
+	default n
+	help
+	  This option enables migratetype highorder.
+	  It creates the specific reserved pool for 4 and more order allocation.
+	  This is helpful fragmentation and allocation success rate
+	  that system has too much high order allocation.
+
+config HIGHORDER_PAGES
+	int "Set migrate highorder pool size (pages)"
+	depends on MIGRATE_HIGHORDER
+	default 0
+	help
+	  Set the reserved size for migrate highorder.
+	  Normally, android system needs about 10% of total memory.
+	  (Thus, reserve 10% of memory if set to 0)
+	  Please check ION memory usage in your system.
+	  And, set this size about minimum (ION + extra) some memory.

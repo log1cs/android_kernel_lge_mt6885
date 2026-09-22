@@ -62,3 +62,9 @@ config MTK_GPU_SWPM_SUPPORT
 	default n
 	help
 	   config supports to make SWPM enable/disable GPU power model
+
+config LGE_PM_GPU_UTILITY
+	bool "Expose GPU state via procfs"
+	default n
+	help
+	  Choose this option to expose GPU state to userspace.

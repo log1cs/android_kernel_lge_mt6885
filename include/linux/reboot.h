@@ -65,6 +65,13 @@ extern void kernel_restart(char *cmd);
 extern void kernel_halt(void);
 extern void kernel_power_off(void);
 
+#ifdef CONFIG_LGE_POWEROFF_TIMEOUT
+extern void kernel_restart_timeout(char *cmd);
+extern void kernel_power_off_timeout(void);
+extern int get_android_restart_status(void);
+extern int get_android_poweroff_status(void);
+#endif
+
 extern int C_A_D; /* for sysctl */
 void ctrl_alt_del(void);
 
