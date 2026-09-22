@@ -61,6 +61,9 @@ enum migratetype {
 #ifdef CONFIG_MEMORY_ISOLATION
 	MIGRATE_ISOLATE,	/* can't allocate from here */
 #endif
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	MIGRATE_HIGHORDER,
+#endif
 	MIGRATE_TYPES
 };
 
@@ -151,6 +154,9 @@ enum zone_stat_item {
 	NR_ZSPAGES,		/* allocated in zsmalloc */
 #endif
 	NR_FREE_CMA_PAGES,
+#ifdef CONFIG_MIGRATE_HIGHORDER
+	NR_FREE_HIGHORDER_PAGES,
+#endif
 	NR_VM_ZONE_STAT_ITEMS };
 
 enum node_stat_item {
