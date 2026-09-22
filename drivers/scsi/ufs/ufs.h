@@ -207,7 +207,11 @@ enum desc_header_offset {
 };
 
 enum ufs_desc_def_size {
+#ifdef CONFIG_LFS_UFS
+	QUERY_DESC_DEVICE_DEF_SIZE		= 0x59,
+#else
 	QUERY_DESC_DEVICE_DEF_SIZE		= 0x40,
+#endif
 	QUERY_DESC_CONFIGURATION_DEF_SIZE	= 0x90,
 	QUERY_DESC_UNIT_DEF_SIZE		= 0x23,
 	QUERY_DESC_INTERCONNECT_DEF_SIZE	= 0x06,
@@ -216,6 +220,9 @@ enum ufs_desc_def_size {
 	QUERY_DESC_GEOMETRY_DEF_SIZE		= 0x48,
 	QUERY_DESC_POWER_DEF_SIZE		= 0x62,
 	QUERY_DESC_HEALTH_MAX_SIZE		= 0x25, /* MTK PATCH */
+#ifdef CONFIG_LFS_UFS
+	QUERY_DESC_STRING_MAX_SIZE      = 0xFE,
+#endif
 };
 
 /* MTK PATCH: Read Geometry Descriptor for RPMB initialization */
