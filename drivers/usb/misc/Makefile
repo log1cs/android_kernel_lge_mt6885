@@ -3,6 +3,9 @@
 # Makefile for the rest of the USB drivers
 # (the ones that don't fit into any other categories)
 #
+
+subdir-ccflags-$(CONFIG_TCPC_MT6360)	+= -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+
 obj-$(CONFIG_USB_ADUTUX)		+= adutux.o
 obj-$(CONFIG_USB_APPLEDISPLAY)		+= appledisplay.o
 obj-$(CONFIG_USB_CYPRESS_CY7C63)	+= cypress_cy7c63.o
@@ -30,3 +33,9 @@ obj-$(CONFIG_USB_CHAOSKEY)		+= chaoskey.o
 
 obj-$(CONFIG_USB_SISUSBVGA)		+= sisusbvga/
 obj-$(CONFIG_USB_LINK_LAYER_TEST)	+= lvstest.o
+
+obj-$(CONFIG_LGE_USB_ANX7418)		+= anx7418/
+obj-$(CONFIG_LGE_USB_TUSB546)		+= tusb546/
+
+obj-$(CONFIG_LGE_DUAL_SCREEN)		+= lge_ds3.o
+obj-$(CONFIG_LGE_USB_MOISTURE_FUSB251)	+= fusb251.o
