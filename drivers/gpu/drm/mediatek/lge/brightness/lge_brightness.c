@@ -167,7 +167,7 @@ struct lge_blmap *lge_get_blmap(struct mtk_panel_ext *panel, enum lge_blmap_type
 	return blmap;
 }
 
-int lge_update_backlight()
+int lge_update_backlight(void)
 {
 	int brightness = 0;
 	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
@@ -292,7 +292,7 @@ error:
 }
 
 
-int lge_backlight_device_update_status()
+int lge_backlight_device_update_status(void)
 {
 	int brightness;
 	struct lge_blmap *blmap;

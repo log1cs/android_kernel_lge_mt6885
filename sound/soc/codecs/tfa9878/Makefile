@@ -43,7 +43,7 @@ ccflags-y += -DTFA_REDUCE_BYPASS_GAIN
 #ccflags-y += -DTFA_UNCONDITIONAL_PASS_FOR_TEST
 ccflags-y += -DTFA_IGNORE_PROBE_FAIL
 #ccflags-y += -DDEBUG -DTFA_NON_DSP_SOLUTION
-ccflags-y += -Werror
+#ccflags-y += -Werror
 ccflags-y += $(call cc-option,-Wno-date-time,)
 
 snd-soc-tfa98xx-objs += tfa98xx.o

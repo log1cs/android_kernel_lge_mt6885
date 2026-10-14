@@ -25,7 +25,7 @@
 
 extern struct lge_dp_display *get_lge_dp(void);
 
-void lge_cover_create_sysfs()
+void lge_cover_create_sysfs(void)
 {
 	static struct class *class_panel_cover = NULL;
 	static struct device *panel_cover_ctrl_sysfs_dev = NULL;

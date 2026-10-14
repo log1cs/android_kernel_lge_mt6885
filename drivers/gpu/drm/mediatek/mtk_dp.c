@@ -4022,7 +4022,7 @@ static int mtk_drm_dp_remove(struct platform_device *pdev)
 }
 
 #if defined(CONFIG_LGE_DUAL_SCREEN)
-bool is_dp_connected()
+bool is_dp_connected(void)
 {
 	struct mtk_dp *mtk_dp = NULL;
 
@@ -4032,7 +4032,7 @@ bool is_dp_connected()
 }
 EXPORT_SYMBOL(is_dp_connected);
 
-int is_dd_connected()
+int is_dd_connected(void)
 {
 	struct mtk_dp *mtk_dp = NULL;
 	int ret = 0;
