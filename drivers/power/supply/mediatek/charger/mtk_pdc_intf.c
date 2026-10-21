@@ -16,12 +16,21 @@
 #include <linux/delay.h>
 #include "mtk_charger_intf.h"
 
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+#include <linux/power/charger_controller.h>
+#endif
+
 #define PD_VBUS_IR_DROP_THRESHOLD 1200
 
 void mtk_pdc_plugout(struct charger_manager *info)
 {
 	info->pdc.check_impedance = true;
 	info->pdc.pd_cap_max_watt = -1;
+#ifdef CONFIG_LGE_PM
+	info->pdc.pd_cap_max_mv = -1;
+	info->pdc.pd_cap_max_ma = -1;
+	info->pdc.pd_cap_max_idx = -1;
+#endif
 	info->pdc.pd_idx = -1;
 	info->pdc.pd_reset_idx = -1;
 	info->pdc.pd_boost_idx = 0;
@@ -315,10 +324,25 @@ int mtk_pdc_setup(struct charger_manager *info, int idx)
 			charger_dev_set_input_current(info->chg1_dev,
 						pd->cap.ma[idx] * 1000);
 
+#ifdef CONFIG_LGE_PM
+		if (pd->pd_idx != idx)
+			charger_dev_set_input_current(info->chg1_dev, 100000);
+#endif
+
 		ret = adapter_dev_set_cap(info->pd_adapter, MTK_PD,
 			pd->cap.max_mv[idx], pd->cap.ma[idx]);
 
+#ifdef CONFIG_LGE_PM
+		if (pd->pd_idx != idx)
+			msleep(15);
+#endif
+
 		if (ret == MTK_ADAPTER_OK) {
+#ifdef CONFIG_LGE_PM
+			if (info->lge_charging) {
+				/* input current will be set in lge_charging */
+			} else
+#endif
 			if (info->data.parallel_vbus &&
 				(oldmA * 2 < pd->cap.ma[idx])) {
 				charger_dev_set_input_current(info->chg1_dev,
@@ -379,6 +403,11 @@ void mtk_pdc_get_cap_max_watt(struct charger_manager *info)
 
 				if (cap->maxwatt[i] > pd->pd_cap_max_watt) {
 					pd->pd_cap_max_watt = cap->maxwatt[i];
+#ifdef CONFIG_LGE_PM
+					pd->pd_cap_max_mv = cap->max_mv[i];
+					pd->pd_cap_max_ma = cap->ma[i];
+					pd->pd_cap_max_idx = i;
+#endif
 					idx = i;
 				}
 				continue;
@@ -443,6 +472,9 @@ int mtk_pdc_get_setting(struct charger_manager *info, int *newvbus, int *newcur,
 	bool chg1_mivr = false;
 	bool chg2_mivr = false;
 	bool chg2_enable = false;
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	int chgctrl_icl;
+#endif
 
 	mtk_pdc_init_table(info);
 	mtk_pdc_get_reset_idx(info);
@@ -513,10 +545,31 @@ int mtk_pdc_get_setting(struct charger_manager *info, int *newvbus, int *newcur,
 	pd_min_watt = cap->max_mv[pd->pd_buck_idx] * cap->ma[pd->pd_buck_idx]
 			/ 100 * (100 - info->data.ibus_err)
 			- info->data.vsys_watt;
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	chgctrl_icl = chgctrl_get_icl() / 1000;
+
+	if (chgctrl_icl >= 0) {
+		pd_max_watt = cap->max_mv[idx] * (min(cap->ma[idx], chgctrl_icl)
+			/ 100 * (100 - info->data.ibus_err) - 100);
+		now_max_watt = cap->max_mv[idx] * ibus + chg2_watt;
+		pd_min_watt = cap->max_mv[pd->pd_buck_idx]
+			* min(cap->ma[pd->pd_buck_idx], chgctrl_icl)
+			/ 100 * (100 - info->data.ibus_err)
+			- info->data.vsys_watt;
+	}
+#endif
 
 	if (pd_min_watt <= 5000000)
 		pd_min_watt = 5000000;
 
+#ifdef CONFIG_LGE_PM
+	/* do not change idx in mivr with USB */
+	if ((info->chr_type == STANDARD_HOST) && (chg1_mivr || chg2_mivr)) {
+		*newidx = selected_idx;
+		boost = false;
+		buck = false;
+	} else
+#endif
 	if ((now_max_watt >= pd_max_watt) || chg1_mivr || chg2_mivr) {
 		*newidx = pd->pd_boost_idx;
 		boost = true;
@@ -575,6 +628,11 @@ bool mtk_pdc_init(struct charger_manager *info)
 
 	info->pdc.check_impedance = true;
 	info->pdc.pd_cap_max_watt = -1;
+#ifdef CONFIG_LGE_PM
+	info->pdc.pd_cap_max_mv = -1;
+	info->pdc.pd_cap_max_ma = -1;
+	info->pdc.pd_cap_max_idx = -1;
+#endif
 	info->pdc.pd_idx = -1;
 	info->pdc.pd_reset_idx = -1;
 	info->pdc.pd_boost_idx = 0;

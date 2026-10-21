@@ -466,6 +466,9 @@ struct usb_bus {
 	struct mon_bus *mon_bus;	/* non-null when associated */
 	int monitored;			/* non-zero when monitored */
 #endif
+#ifdef CONFIG_LGE_USB
+	unsigned skip_resume:1;	/* set from qct code-aurora */
+#endif
 };
 
 struct usb_dev_state;

@@ -19,6 +19,10 @@
 #endif
 #include "mdee_dumper_v1.h"
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 #ifndef DB_OPT_DEFAULT
 #define DB_OPT_DEFAULT    (0)	/* Dummy macro define to avoid build error */
 #endif
@@ -28,18 +32,20 @@
 #endif
 
 static void ccci_aed_v1(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
-	char *aed_str, int db_opt)
+	const char *aed_str, int db_opt)
 {
 	void *ex_log_addr = NULL;
 	int ex_log_len = 0;
+#if defined(CONFIG_MTK_AEE_FEATURE)
 	void *md_img_addr = NULL;
 	int md_img_len = 0;
+#endif
 	int info_str_len = 0;
 	char *buff;		/*[AED_STR_LEN]; */
 #if defined(CONFIG_MTK_AEE_FEATURE)
 	char buf_fail[] = "Fail alloc mem for exception\n";
 #endif
-	char *img_inf;
+	char *img_inf = NULL;
 	int md_id = mdee->md_id;
 	struct mdee_dumper_v1 *dumper = mdee->dumper_obj;
 	struct ccci_smem_region *mdss_dbg =
@@ -95,13 +101,9 @@ static void ccci_aed_v1(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
 		ex_log_addr = (void *)&dumper->ex_info;
 		ex_log_len = sizeof(struct ex_log_t);
 	}
-	if (dump_flag & CCCI_AED_DUMP_MD_IMG_MEM) {
-		md_img_addr = (void *)mem_layout->md_bank0.base_ap_view_vir;
-		md_img_len = MD_IMG_DUMP_SIZE;
-	}
 	if (buff == NULL) {
 #if defined(CONFIG_MTK_AEE_FEATURE)
-		if (md_dbg_dump_flag & (1 << MD_DBG_DUMP_SMEM))
+		if (md_dbg_dump_flag & (1U << MD_DBG_DUMP_SMEM))
 			aed_md_exception_api(ex_log_addr, ex_log_len,
 				md_img_addr, md_img_len, buf_fail, db_opt);
 		else
@@ -120,11 +122,17 @@ static void ccci_aed_v1(struct ccci_fsm_ee *mdee, unsigned int dump_flag,
 		kfree(buff);
 	}
 }
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+static char assert_category[32];
+static char assert_keyword[32];
+#endif
+
 static void mdee_dumper_info_dump_v1(struct ccci_fsm_ee *mdee)
 {
 	struct mdee_dumper_v1 *dumper = mdee->dumper_obj;
 	int md_id = mdee->md_id;
-	char *ex_info;/* [EE_BUF_LEN] = ""; */
+	char *ex_info = NULL;/* [EE_BUF_LEN] = ""; */
 	char *ex_info_temp = NULL;
 	/* [EE_BUF_LEN] = "\n[Others] May I-Bit dis too long\n"; */
 	char *i_bit_ex_info = NULL;
@@ -174,6 +182,13 @@ static void mdee_dumper_info_dump_v1(struct ccci_fsm_ee *mdee)
 	case MD_EX_TYPE_ASSERT_DUMP:
 		/* Fall through */
 	case MD_EX_TYPE_ASSERT:
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		memset(assert_category, 0x0, sizeof(assert_category));
+		memset(assert_keyword, 0x0, sizeof(assert_keyword));
+		mdee_get_assert_category(debug_info->assert.file_name,
+			assert_category, assert_keyword);
+#endif
+
 		CCCI_NORMAL_LOG(md_id, FSM, "filename = %s\n",
 			debug_info->assert.file_name);
 		CCCI_NORMAL_LOG(md_id, FSM, "line = %d\n",
@@ -191,6 +206,11 @@ static void mdee_dumper_info_dump_v1(struct ccci_fsm_ee *mdee)
 			debug_info->assert.parameters[0],
 			debug_info->assert.parameters[1],
 			debug_info->assert.parameters[2]);
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		CCCI_ERROR_LOG(md_id, FSM,
+			"category = %s, keyword = %s\n",
+			assert_category, assert_keyword);
+#endif
 		break;
 	case MD_EX_TYPE_UNDEF:
 		/* Fall through */
@@ -329,9 +349,10 @@ static void mdee_dumper_info_dump_v1(struct ccci_fsm_ee *mdee)
 		/* use strcpy, otherwise if this happens after a MD EE,
 		 * the former EE info will be printed out
 		 */
-		strncpy(ex_info, "\n[Others] MD long time no response\n",
-			EE_BUF_LEN);
-		db_opt |= DB_OPT_FTRACE;
+		if (snprintf(ex_info, EE_BUF_LEN,
+			"\n[Others] MD long time no response\n") < 0)
+			ex_info[0] = 0;
+		db_opt |= (unsigned int)DB_OPT_FTRACE;
 		break;
 	case MD_EE_CASE_WDT:
 		strncpy(ex_info, "\n[Others] MD watchdog timeout interrupt\n",
@@ -427,6 +448,55 @@ err_exit:
 	kfree(ex_info);
 	kfree(ex_info_temp);
 	kfree(i_bit_ex_info);
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	/*
+	MD_EX_TYPE_INVALID = 0,
+	MD_EX_TYPE_UNDEF = 1,
+	MD_EX_TYPE_SWI = 2,
+	MD_EX_TYPE_PREF_ABT = 3,
+	MD_EX_TYPE_DATA_ABT = 4,
+	MD_EX_TYPE_ASSERT = 5,
+	MD_EX_TYPE_FATALERR_TASK = 6,
+	MD_EX_TYPE_FATALERR_BUF = 7,
+	MD_EX_TYPE_LOCKUP = 8,
+	MD_EX_TYPE_ASSERT_DUMP = 9,
+	MD_EX_TYPE_ASSERT_FAIL = 10,
+	DSP_EX_TYPE_ASSERT = 11,
+	DSP_EX_TYPE_EXCEPTION = 12,
+	DSP_EX_FATAL_ERROR = 13,
+
+	CC_MD1_EXCEPTION = 15,
+
+	NUM_EXCEPTION,
+	MD_EX_TYPE_C2K_ERROR = 0x25,
+	MD_EX_TYPE_EMI_CHECK = 99,
+	MD_EX_C2K_FATAL_ERROR = 0x3000,
+	*/
+	if (debug_info && (debug_info->type == MD_EX_TYPE_ASSERT_DUMP ||
+				debug_info->type == MD_EX_TYPE_ASSERT)) {
+		if (!strcmp(assert_category, "RF"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_RF);
+		else if (!strcmp(assert_category, "AUDIO"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_AUDIO);
+		else if (!strcmp(assert_category, "GPS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_GPS);
+		else if (!strcmp(assert_category, "PS"))
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_PS);
+		else
+			lge_set_reboot_reason(LGE_CRASH_MODEM_ASSERT_BSP);
+
+		lge_set_modem_info(debug_info->type);
+	} else if (debug_info &&
+			(debug_info->type == MD_EX_TYPE_FATALERR_TASK ||
+			 debug_info->type == MD_EX_TYPE_FATALERR_BUF)) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_FATAL);
+		lge_set_modem_info(debug_info->type);
+	} else if (debug_info && debug_info->type != MD_EX_TYPE_INVALID) {
+		lge_set_reboot_reason(LGE_CRASH_MODEM_UNKNOWN_CRASH);
+		lge_set_modem_info(debug_info->type);
+	}
+#endif
 }
 
 /*
@@ -434,7 +504,7 @@ err_exit:
  */
 static void mdee_dumper_info_prepare_v1(struct ccci_fsm_ee *mdee)
 {
-	struct ex_log_t *ex_info;
+	struct ex_log_t *ex_info = NULL;
 	int ee_type, ee_case;
 	struct mdee_dumper_v1 *dumper = mdee->dumper_obj;
 	int md_id = mdee->md_id;
@@ -680,8 +750,6 @@ static void mdee_dumper_info_prepare_v1(struct ccci_fsm_ee *mdee)
 
 	debug_info->ext_mem = ex_info;
 	debug_info->ext_size = sizeof(struct ex_log_t);
-	debug_info->md_image = (void *)mem_layout->md_bank0.base_ap_view_vir;
-	debug_info->md_size = MD_IMG_DUMP_SIZE;
 }
 static void mdee_dumper_v1_set_ee_pkg(struct ccci_fsm_ee *mdee,
 	char *data, int len)
@@ -724,7 +792,7 @@ static void mdee_dumper_v1_dump_ee_info(struct ccci_fsm_ee *mdee,
 				"\n[Others] MD_BOOT_UP_FAIL(HS%d)\n", 2);
 			/* Handshake 2 fail */
 			CCCI_MEM_LOG_TAG(md_id, FSM, "Dump MD EX log\n");
-			if (md_dbg_dump_flag & (1 << MD_DBG_DUMP_SMEM)) {
+			if (md_dbg_dump_flag & (1U << MD_DBG_DUMP_SMEM)) {
 				ccci_util_mem_dump(md_id, CCCI_DUMP_MEM_DUMP,
 					mdccci_dbg->base_ap_view_vir,
 					mdccci_dbg->size);

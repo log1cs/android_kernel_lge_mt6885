@@ -239,6 +239,14 @@ static int mtk_thermal_get_tz_idx(char *type)
 		return MTK_THERMAL_SENSOR_DCTM;
 	else if (strncmp(type, "mtktscharger", 12) == 0)
 		return MTK_THERMAL_SENSOR_CHARGER;
+#ifdef CONFIG_LGE_PM_VTS
+	else if (strncmp(type, "lgetsquiet", 10) == 0)
+		return LGE_THERMAL_SENSOR_QUIET;
+	else if (strncmp(type, "lgetsskin", 9) == 0)
+		return LGE_THERMAL_SENSOR_SKIN;
+	else if (strncmp(type, "lgetsbattery", 12) == 0)
+		return LGE_THERMAL_SENSOR_BATTERY;
+#endif
 
 	return -1;
 }
@@ -1668,9 +1676,11 @@ int trip, struct thermal_cooling_device *cdev)
 		 * Or cannot rollback devdata in bind ops...
 		 */
 		/* Init mtk Cooler Data */
+		mutex_lock(&MTM_COOLER_LOCK);
 		mcdata = cdev->devdata;
 		mcdata->trip = trip;
 		mcdata->tz = thermal;
+		mutex_unlock(&MTM_COOLER_LOCK);
 	}
 
 	THRML_LOG("%s thermal_type:%s trip:%d cdev_type:%s  ret:%d\n", __func__,

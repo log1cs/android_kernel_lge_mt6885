@@ -150,6 +150,7 @@ void disp_aal_set_lcm_type(unsigned int panel_type);
 void disp_aal_set_ess_level(int level);
 void disp_aal_set_ess_en(int enable);
 void disp_aal_set_dre_en(int enable);
+int disp_aal_get_ess_en(void);
 
 int mtk_drm_ioctl_aal_eventctl(struct drm_device *dev, void *data,
 	struct drm_file *file_priv);

@@ -53,6 +53,9 @@
 #include <linux/of_fdt.h>	/*of_dt API*/
 #include <linux/of.h>
 #include <linux/vmalloc.h>
+#ifdef CONFIG_LGE_PM
+#include <linux/syscalls.h>
+#endif
 #include <linux/math64.h>
 #include <linux/alarmtimer.h>
 
@@ -81,12 +84,25 @@
 #include "simulator_kernel.h"
 #endif
 
+#ifdef CONFIG_LGE_PM_BATTERY_ID
+#include <linux/power/lge_battery_id.h>
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+#include <linux/power/battery_cycle.h>
+#endif
 
+#ifdef CONFIG_LGE_BOOT_MODE
+#include <soc/mediatek/lge/lge_boot_mode.h>
+#endif
 
 /* ============================================================ */
 /* global variable */
 /* ============================================================ */
 struct mtk_battery gm;
+
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+static bool aging_update_flag = false;
+#endif
 
 /* ============================================================ */
 /* gauge hal interface */
@@ -664,6 +680,12 @@ void fgauge_get_profile_id(void)
 {
 	gm.battery_id = 0;
 }
+#elif defined(CONFIG_LGE_PM_BATTERY_ID)
+void fgauge_get_profile_id(void)
+{
+	gm.battery_id = lge_battery_id_get_profile_id();
+	bm_err("[fgauge_get_profile_id]Battery id=(%d)\n", gm.battery_id);
+}
 #else
 void fgauge_get_profile_id(void)
 {
@@ -808,10 +830,12 @@ void fg_custom_init_from_header(void)
 	fg_cust_data.power_on_car_chr = POWER_ON_CAR_CHR;
 	fg_cust_data.power_on_car_nochr = POWER_ON_CAR_NOCHR;
 	fg_cust_data.shutdown_car_ratio = SHUTDOWN_CAR_RATIO;
+	fg_cust_data.min_uisoc_at_kpoc = MIN_UISOC_AT_KPOC;
 
 	/* ZCV update */
 	fg_cust_data.zcv_suspend_time = ZCV_SUSPEND_TIME;
 	fg_cust_data.sleep_current_avg = SLEEP_CURRENT_AVG;
+	fg_cust_data.zcv_com_vol_limit = ZCV_COM_VOL_LIMIT;
 	fg_cust_data.zcv_car_gap_percentage = ZCV_CAR_GAP_PERCENTAGE;
 
 	/* dod_init */
@@ -1059,6 +1083,17 @@ void fg_custom_init_from_header(void)
 		gm.rbat.rbat_pull_up_r = RBAT_PULL_UP_R;
 	}
 
+#ifdef CONFIG_LGE_PM_BATTERY_NTC_TUNED
+	if (IS_ENABLED(BAT_NTC_68)) {
+		gm.rbat.type = 68;
+		gm.rbat.rbat_pull_up_r = RBAT_PULL_UP_R;
+	}
+
+	if (IS_ENABLED(BAT_NTC_100)) {
+		gm.rbat.type = 100;
+		gm.rbat.rbat_pull_up_r = RBAT_PULL_UP_R;
+	}
+#endif
 }
 
 
@@ -1317,6 +1352,10 @@ void fg_custom_init_from_dts(struct platform_device *dev)
 	fg_read_dts_val(np, "AGING1_LOAD_SOC",
 		&(fg_cust_data.aging1_load_soc), UNIT_TRANS_100);
 
+#ifdef CONFIG_LGE_PM
+	/* e-service : ALPS05092166 */
+	/* It do not use it. Please ignore the below error logs. (ignore) */
+#else
 	fg_read_dts_val(np, "AGING4_UPDATE_SOC",
 		&(fg_cust_data.aging4_update_soc), UNIT_TRANS_100);
 	fg_read_dts_val(np, "AGING4_LOAD_SOC",
@@ -1329,7 +1368,7 @@ void fg_custom_init_from_dts(struct platform_device *dev)
 		&(fg_cust_data.aging6_update_soc), UNIT_TRANS_100);
 	fg_read_dts_val(np, "AGING6_LOAD_SOC",
 		&(fg_cust_data.aging6_load_soc), UNIT_TRANS_100);
-
+#endif
 
 
 	fg_read_dts_val(np, "AGING_TEMP_DIFF",
@@ -1432,12 +1471,22 @@ void fg_custom_init_from_dts(struct platform_device *dev)
 		&(fg_cust_data.shutdown_gauge1_vbat_en), 1);
 	fg_read_dts_val(np, "SHUTDOWN_GAUGE1_VBAT",
 		&(fg_cust_data.shutdown_gauge1_vbat), 1);
+	fg_read_dts_val(np, "POWER_ON_CAR_CHR",
+		&(fg_cust_data.power_on_car_chr), 1);
+	fg_read_dts_val(np, "POWER_ON_CAR_NOCHR",
+		&(fg_cust_data.power_on_car_nochr), 1);
+	fg_read_dts_val(np, "SHUTDOWN_CAR_RATIO",
+		&(fg_cust_data.shutdown_car_ratio), 1);
+	fg_read_dts_val(np, "MIN_UISOC_AT_KPOC",
+		&(fg_cust_data.min_uisoc_at_kpoc), 1);
 
 	/* ZCV update */
 	fg_read_dts_val(np, "ZCV_SUSPEND_TIME",
 		&(fg_cust_data.zcv_suspend_time), 1);
 	fg_read_dts_val(np, "SLEEP_CURRENT_AVG",
 		&(fg_cust_data.sleep_current_avg), 1);
+	fg_read_dts_val(np, "ZCV_COM_VOL_LIMIT",
+		&(fg_cust_data.zcv_com_vol_limit), 1);
 	fg_read_dts_val(np, "ZCV_CAR_GAP_PERCENTAGE",
 		&(fg_cust_data.zcv_car_gap_percentage), 1);
 
@@ -1460,6 +1509,30 @@ void fg_custom_init_from_dts(struct platform_device *dev)
 		&(fg_cust_data.vbat_oldocv_diff), 1);
 	fg_read_dts_val(np, "SWOCV_OLDOCV_DIFF_EMB",
 		&(fg_cust_data.swocv_oldocv_diff_emb), 1);
+	fg_read_dts_val(np, "VIR_OLDOCV_DIFF_EMB",
+		&(fg_cust_data.vir_oldocv_diff_emb), 1);
+	fg_read_dts_val(np, "VIR_OLDOCV_DIFF_EMB_LT",
+		&(fg_cust_data.vir_oldocv_diff_emb_lt), 1);
+	fg_read_dts_val(np, "VIR_OLDOCV_DIFF_EMB_TMP",
+		&(fg_cust_data.vir_oldocv_diff_emb_tmp), 1);
+#ifdef CONFIG_LGE_BOOT_MODE
+	/* need to update D0 immediate when voltage changes at factory power test */
+	if (lge_get_boot_mode() == LGE_BOOT_MODE_QEM_130K) {
+		bm_err("%s LGE_BOOT_MODE_QEM_130K, oldocv diff set 0 \n", __func__);
+		fg_cust_data.hwocv_oldocv_diff = 0;
+		fg_cust_data.hwocv_oldocv_diff_chr = 0;
+		fg_cust_data.hwocv_swocv_diff = 0;
+		fg_cust_data.hwocv_swocv_diff_lt = 0;
+		fg_cust_data.hwocv_swocv_diff_lt_temp = 0;
+		fg_cust_data.swocv_oldocv_diff = 0;
+		fg_cust_data.swocv_oldocv_diff_chr = 0;
+		fg_cust_data.vbat_oldocv_diff = 0;
+		fg_cust_data.swocv_oldocv_diff_emb = 0;
+		fg_cust_data.vir_oldocv_diff_emb = 0;
+		fg_cust_data.vir_oldocv_diff_emb_lt = 0;
+		fg_cust_data.vir_oldocv_diff_emb_tmp = 0;
+	}
+#endif
 
 	fg_read_dts_val(np, "PMIC_SHUTDOWN_TIME",
 		&(fg_cust_data.pmic_shutdown_time), UNIT_TRANS_60);
@@ -1480,6 +1553,9 @@ void fg_custom_init_from_dts(struct platform_device *dev)
 	fg_read_dts_val(np, "PSEUDO1_SEL", &(fg_cust_data.pseudo1_sel), 1);
 
 	fg_read_dts_val(np, "D0_SEL", &(fg_cust_data.d0_sel), 1);
+	fg_read_dts_val(np, "DLPT_UI_REMAP_EN",
+		&(fg_cust_data.dlpt_ui_remap_en), 1);
+
 	fg_read_dts_val(np, "AGING_SEL", &(fg_cust_data.aging_sel), 1);
 	fg_read_dts_val(np, "BAT_PAR_I", &(fg_cust_data.bat_par_i), 1);
 	fg_read_dts_val(np, "RECORD_LOG", &(fg_cust_data.record_log), 1);
@@ -1850,7 +1926,18 @@ void fg_custom_init_from_dts(struct platform_device *dev)
 
 #endif	/* end of CONFIG_OF */
 
+#ifdef CONFIG_LGE_PM
+void fg_custom_dump(void)
+{
+	int i;
 
+	for (i = 0; i < fg_table_cust_data.active_table_number; i++) {
+		bm_err("[%s] T%d: %4d Q_MAX: %4d\n", __func__, i,
+			fg_table_cust_data.fg_profile[i].temperature,
+			fg_table_cust_data.fg_profile[i].q_max);
+	}
+}
+#endif
 
 /* ============================================================ */
 /* Customized function */
@@ -2049,7 +2136,11 @@ void sw_check_bat_plugout(void)
 			battery_main.BAT_STATUS = POWER_SUPPLY_STATUS_UNKNOWN;
 			wakeup_fg_algo(FG_INTR_BAT_PLUGOUT);
 			battery_update(&battery_main);
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+			/* do not power-off here */
+#else /* MediaTek */
 			kernel_power_off();
+#endif
 		}
 	}
 }
@@ -2085,6 +2176,17 @@ void fg_nafg_monitor(void)
 				FG_INTR_KERNEL_CMD,
 				FG_KERNEL_CMD_DISABLE_NAFG,
 				true);
+
+#ifdef CONFIG_LGE_PM
+			bm_err("[fg_nafg_monitor]before restart fuelgauge pid:%d\n",
+				gm.g_fgd_pid);
+
+			gm.old_pid = gm.g_fgd_pid;
+			sys_kill(gm.g_fgd_pid, SIGKILL);
+			gm.force_restart_daemon++;
+			bm_err("[fg_nafg_monitor]after restart fuelgauged,%d\n",
+				gm.force_restart_daemon);
+#endif
 		}
 	}
 	bm_debug("[%s]time:%d nafg_cnt:%d, now:%d, last_t:%d\n",
@@ -2287,6 +2389,11 @@ void fg_zcv_int_handler(void)
 		wakeup_fg_algo(FG_INTR_FG_ZCV);
 		zcv_intr_en = 0;
 		gauge_set_zcv_interrupt_en(zcv_intr_en);
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+		bm_err("[AGING][fg_zcv_int_handler] car:%d zcv_curr:%d zcv:%d, slp_cur_avg:%d\n",
+			fg_coulomb, zcv_intr_curr, zcv,
+			fg_cust_data.sleep_current_avg);
+#endif
 	}
 
 	fg_int_event(gm.gdev, EVT_INT_ZCV);
@@ -2569,7 +2676,11 @@ void fg_bat_plugout_int_handler(void)
 		wakeup_fg_algo(FG_INTR_BAT_PLUGOUT);
 		battery_update(&battery_main);
 		fg_int_event(gm.gdev, EVT_INT_BAT_PLUGOUT);
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+		/* do not power-off here */
+#else /* MediaTek */
 		kernel_power_off();
+#endif
 	}
 }
 
@@ -2587,7 +2698,12 @@ void fg_bat_plugout_int_handler_gm25(void)
 		gauge_dev_set_info(gm.gdev, GAUGE_BAT_PLUG_STATUS, 0);
 		en_intr_VBATON_UNDET(0);
 		battery_notifier(EVENT_BATTERY_PLUG_OUT);
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+		/* do not power-off here */
+		battery_update(&battery_main);
+#else /* MediaTek */
 		kernel_power_off();
+#endif
 	}
 }
 
@@ -2654,6 +2770,15 @@ int fg_bat_int1_h_handler(struct gauge_consumer *consumer)
 		fg_coulomb, gm.fg_bat_int1_ht,
 		gm.fg_bat_int1_lt, gm.fg_bat_int1_gap);
 
+#ifdef CONFIG_LGE_PM
+	if (fg_coulomb < -100000) {
+		bm_err("coulomb over threshold, disable_gauge !!!\n");
+		gm.disableGM30 = true;
+		if (fg_interrupt_check() == false)
+			return 0;
+	}
+#endif
+
 	fg_int_event(gm.gdev, EVT_INT_BAT_INT1_HT);
 	wakeup_fg_algo(FG_INTR_BAT_INT1_HT);
 	sw_check_bat_plugout();
@@ -2712,6 +2837,15 @@ int fg_bat_int2_l_handler(struct gauge_consumer *consumer)
 	bm_err("[%s] car:%d lt:%d\n",
 		__func__,
 		fg_coulomb, gm.fg_bat_int2_lt);
+
+#ifdef CONFIG_LGE_PM
+	if (fg_coulomb < -100000) {
+		bm_err("coulomb over threshold, disable_gauge !!!\n");
+		gm.disableGM30 = true;
+		if (fg_interrupt_check() == false)
+			return 0;
+	}
+#endif
 
 	fg_sw_bat_cycle_accu();
 
@@ -2839,9 +2973,10 @@ void fg_drv_update_hw_status(void)
 
 int battery_update_routine(void *x)
 {
+	int ret = 0;
 	battery_update_psd(&battery_main);
 	while (1) {
-		wait_event(gm.wait_que,
+		ret = wait_event_interruptible(gm.wait_que,
 			(gm.fg_update_flag > 0)
 			|| (gm.tracking_cb_flag > 0)
 			|| (gm.onepercent_cb_flag > 0));
@@ -3263,6 +3398,37 @@ void fg_daemon_comm_INT_data(char *rcv, char *ret)
 			pret->type, pret->input, pret->output, pret->status);
 		break;
 	}
+
+#ifdef CONFIG_LGE_PM
+	if (prcv->type == FG_SET_SOC) {
+		battery_main.BAT_RAW_CAPACITY = gm.soc;
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+		battery_cycle_update(gm.soc);
+#endif
+	}
+#endif
+
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+	if (prcv->type == FG_SET_AGING_FACTOR) {
+		if (battery_main.BAT_RAW_CAPACITY >= 95) {
+			bm_err("[AGING] type: %d new_aging: %d pre_capacity: %d pre_aging: %d \n",
+				prcv->type, gm.aging_factor,
+				battery_main.BAT_CHARGE_FULL, battery_main.BAT_CHARGE_FULL_LEVEL);
+			aging_update_flag = true;
+		}
+	}
+	if (prcv->type == FG_SET_V_SOC) {
+		if (battery_main.BAT_RAW_CAPACITY >= 100 && aging_update_flag == true) {
+			bm_err("[AGING] type: %d new_aging: %d capacity: %d aging: %d batt_temp: %d\n",
+				prcv->type, gm.aging_factor,
+				battery_main.BAT_CHARGE_FULL, battery_main.BAT_CHARGE_FULL_LEVEL, battery_main.BAT_batt_temp);
+			aging_update_flag = false;
+			battery_aging_update_by_full(
+				battery_main.BAT_CHARGE_FULL, battery_main.BAT_CHARGE_FULL_LEVEL, battery_main.BAT_batt_temp);
+		}
+	}
+#endif
+
 #if 0
 	bm_debug("%s type:%d in:%d out:%d,Retun t:%d,in:%d,o:%d,s:%d\n",
 		__func__, prcv->type, prcv->input, prcv->output,
@@ -3374,11 +3540,26 @@ void bmd_ctrl_cmd_from_user(void *nl_data, struct fgd_nl_msg_t *ret_msg)
 		{
 			int is_charger_exist = 0;
 
+#ifdef CONFIG_LGE_PM
+			switch (battery_main.BAT_STATUS) {
+			case POWER_SUPPLY_STATUS_CHARGING:
+			case POWER_SUPPLY_STATUS_FULL:
+				is_charger_exist = true;
+				break;
+			case POWER_SUPPLY_STATUS_UNKNOWN:
+			case POWER_SUPPLY_STATUS_DISCHARGING:
+			case POWER_SUPPLY_STATUS_NOT_CHARGING:
+			default:
+				is_charger_exist = false;
+				break;
+			}
+#else /* MediaTek */
 			if (upmu_get_rgs_chrdet() == 0 ||
 				mt_usb_is_device() == 0)
 				is_charger_exist = false;
 			else
 				is_charger_exist = true;
+#endif
 
 			ret_msg->fgd_data_len += sizeof(is_charger_exist);
 			memcpy(ret_msg->fgd_data,
@@ -3484,6 +3665,12 @@ void bmd_ctrl_cmd_from_user(void *nl_data, struct fgd_nl_msg_t *ret_msg)
 					gm.init_flag == 1)
 					fg_cust_data.dod_init_sel = 14;
 			}
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+			battery_cycle_initial();
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+			battery_aging_initial();
+#endif
 
 		}
 		break;
@@ -4358,12 +4545,18 @@ void bmd_ctrl_cmd_from_user(void *nl_data, struct fgd_nl_msg_t *ret_msg)
 			gm.uisoc_oldtime = now_time;
 
 			battery_main.BAT_CAPACITY = gm.ui_soc;
+#ifdef CONFIG_LGE_PM
+			battery_main.BAT_TTF_CAPACITY = (daemon_ui_soc + 5) / 10;
+#endif
 			battery_update(&battery_main);
 		} else {
 			bm_debug("[fg_res] FG_DAEMON_CMD_SET_KERNEL_UISOC = %d %d GM3:%d\n",
 				daemon_ui_soc, gm.ui_soc, gm.disableGM30);
 			/* ac_update(&ac_main); */
 			battery_main.BAT_CAPACITY = gm.ui_soc;
+#ifdef CONFIG_LGE_PM
+			battery_main.BAT_TTF_CAPACITY = (daemon_ui_soc + 5) / 10;
+#endif
 			battery_update(&battery_main);
 		}
 	}
@@ -4628,6 +4821,32 @@ void bmd_ctrl_cmd_from_user(void *nl_data, struct fgd_nl_msg_t *ret_msg)
 	}
 	break;
 
+	case FG_DAEMON_CMD_SET_AGING_INFO:
+	{
+		int aging_factor = 0, q_max_aging = 0, aging_type = 0;
+
+		aging_type = msg->fgd_subcmd_para1;
+
+		if (aging_type == 0) { /* aging factor */
+			memcpy(&aging_factor, &msg->fgd_data[0],
+				sizeof(aging_factor));
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+			battery_main.BAT_CHARGE_FULL_LEVEL = aging_factor;
+#endif
+		} else if (aging_type == 1) { /*q_max with aging*/
+			memcpy(&q_max_aging, &msg->fgd_data[0],
+				sizeof(q_max_aging));
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+			battery_main.BAT_CHARGE_FULL = q_max_aging;
+#endif
+		}
+
+		bm_debug(
+			"[fg_res] FG_DAEMON_CMD_SET_AGING_INFO = %d %d %d\n",
+			aging_type, aging_factor, q_max_aging);
+	}
+	break;
+
 	default:
 		bm_err("bad FG_DAEMON_CTRL_CMD_FROM_USER 0x%x\n", msg->fgd_cmd);
 		break;
@@ -4646,6 +4865,9 @@ void bmd_ctrl_cmd_from_user(void *nl_data, struct fgd_nl_msg_t *ret_msg)
 
 void mtk_battery_init(struct platform_device *dev)
 {
+#ifdef CONFIG_LGE_PM
+	gm.soc = -1;
+#endif
 	gm.ui_soc = -1;
 	gm.soc = -1;
 	gm.log_level = BM_DAEMON_DEFAULT_LOG_LEVEL;
@@ -4690,6 +4912,10 @@ void mtk_battery_init(struct platform_device *dev)
 	fg_custom_init_from_header();
 #ifdef CONFIG_OF
 	fg_custom_init_from_dts(dev);
+#endif
+
+#ifdef CONFIG_LGE_PM
+	fg_custom_dump();
 #endif
 
 	gauge_coulomb_service_init();

@@ -67,7 +67,11 @@
 #define HDCP2_REPAUTHSTREAMRDY_WDT          100      // 100 ms
 
 //Patch for QD980 LLCTS
+#ifdef CONFIG_LGE_DISPLAY_COMMON
 #define HDCP2_TX_RETRY_CNT      3
+#else
+#define HDCP2_TX_RETRY_CNT      1
+#endif
 #define HDCP2_TX_LC_RETRY_CNT   1023
 #define HDCP2_STREAM_MANAGE_RETRY_CNT   8
 

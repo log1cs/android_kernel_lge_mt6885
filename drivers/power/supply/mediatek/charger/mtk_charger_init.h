@@ -30,6 +30,14 @@
 #define APPLE_2_1A_CHARGER_CURRENT		800000
 #define TA_AC_CHARGING_CURRENT	3000000
 #define USB_UNLIMITED_CURRENT	2000000
+#ifdef CONFIG_LGE_PM
+#define TA_AC_CHARGING_INPUT_CURRENT		1800000
+#define TYPEC_RP3P0_INPUT_CURRENT		3000000
+#define TYPEC_RP3P0_CURRENT			3000000
+#define TYPEC_RP1P5_INPUT_CURRENT		1500000
+#define TYPEC_RP1P5_CURRENT			2000000
+#define PD_CHARGER_CURRENT			3000000
+#endif
 
 /* dynamic mivr */
 #define V_CHARGER_MIN_1 4400000 /* 4.4 V */
@@ -82,6 +90,23 @@
 /* slave charger */
 #define CHG2_EFF 90
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+/* wireless charger */
+#define WLESS_BPP_INPUT_CURRENT		800000 /* 0.8 A */
+#define WLESS_BPP_CHARGING_CURRENT	1000000 /* 1 A */
+#define WLESS_BPP_VBUS			5500000 /* 5.5 V */
+#define WLESS_BPP_MIVR			4500000 /* 4.5 V */
+#define WLESS_EPP_INPUT_CURRENT		1000000 /* 1 A */
+#define WLESS_EPP_CHARGING_CURRENT	3000000 /* 3 A */
+#define WLESS_EPP_VBUS			12000000 /* 12 V */
+#define WLESS_EPP_MIVR			11000000 /* 11 V */
+#define WLESS_MARGIN_POWER		1000000 /* 1 W */
+#define WLESS_FASTCHG_POWER		9000000 /* 9 W */
+#define WLESS_OVERHEAT_TEMP		450 /* 0.1 degC */
+#define WLESS_BASE_INPUT_CURRENT	500000 /* 500mA */
+#define WLESS_BASE_CHARGING_CURRENT	500000 /* 500mA */
+#endif
+
 /* cable measurement impedance */
 #define CABLE_IMP_THRESHOLD 699
 #define VBAT_CABLE_IMP_THRESHOLD 3900000 /* uV */
@@ -99,8 +124,12 @@
 #define DEFAULT_BC12_CHARGER 0 /* MAIN_CHARGER */
 
 /* battery warning */
+#ifdef CONFIG_LGE_PM
+/* do not enable notify */
+#else /* MediaTek */
 #define BATTERY_NOTIFY_CASE_0001_VCHARGER
 #define BATTERY_NOTIFY_CASE_0002_VBATTEMP
+#endif
 
 /* pe4 */
 #define PE40_MAX_VBUS 11000

@@ -13,6 +13,9 @@
 
 #include <mtk_dbg_common_v1.h>
 #include <mtk_lpm_module.h>
+#include <mtk_lpm_call.h>
+#include <mtk_lpm_call_type.h>
+
 #include <mtk_resource_constraint_v1.h>
 #include <mtk_idle_sysfs.h>
 #include <mtk_suspend_sysfs.h>
@@ -20,7 +23,7 @@
 #include <mtk_power_gs_api.h>
 #include <mt-plat/mtk_ccci_common.h>
 
-#define MTK_DGB_SUSP_NODE	"/sys/kernel/debug/suspend/suspend_state"
+#define MTK_DGB_SUSP_NODE	"/proc/mtk_lpm/suspend/suspend_state"
 
 #undef mtk_dbg_log
 #define mtk_dbg_log(fmt, args...) \
@@ -44,6 +47,7 @@ static struct syscore_ops spm_block_syscore_ops = {
 
 static unsigned int mtk_suspend_debug_flag;
 static unsigned int power_golden_dump_type = GS_ALL;
+
 
 /* debugfs for debug in syscore callback */
 static int spm_syscore_dbg_suspend(void)
@@ -83,7 +87,7 @@ static ssize_t mtk_dbg_suspend_state_read(char *ToUser, size_t sz, void *priv)
 	mtk_dbg_log("golden dump disable/enable:\n");
 	mtk_dbg_log("echo golden_dump 0/1 > %s\n", MTK_DGB_SUSP_NODE);
 	mtk_dbg_log("golden type setting (default)PMIC[0], CG[1], DCM[2]:\n");
-	mtk_dbg_log("echo golden_type 1/3/7 > %s\n", MTK_DGB_SUSP_NODE);
+	mtk_dbg_log("echo golden_type 1/3/7/15 > %s\n", MTK_DGB_SUSP_NODE);
 
 	return p - ToUser;
 }

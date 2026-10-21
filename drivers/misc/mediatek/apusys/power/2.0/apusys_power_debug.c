@@ -30,6 +30,7 @@
 #include <linux/uaccess.h>
 #include <linux/string.h>
 #include <linux/random.h>
+#include <linux/proc_fs.h>
 
 #include "apusys_power_ctl.h"
 #include "hal_config_power.h"
@@ -167,6 +168,8 @@ int apu_power_power_stress(int type, int device, int opp)
 				__func__, g_pwr_log_level);
 		LOG_WRN("%s, power_on_off_stress : %d\n",
 				__func__, power_on_off_stress);
+		LOG_WRN("%s, is_power_debug_lock : %d, fixed_opp: %d\n",
+				__func__, is_power_debug_lock, fixed_opp);
 		apu_get_power_info(0);
 		break;
 

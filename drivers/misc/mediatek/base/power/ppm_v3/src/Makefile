@@ -17,6 +17,10 @@ ccflags-y += \
 	-I$(srctree)/drivers/misc/mediatek/base/power/include	\
 	-I$(srctree)/drivers/misc/mediatek/base/power/$(CONFIG_MTK_PLATFORM)	\
 
+ifeq ($(CONFIG_LGE_PM_TMR), y)
+ccflags-y += \
+	-I$(srctree)/drivers/misc/mediatek/thermal/common/inc/
+endif
 ifneq (,$(findstring 3gear,$(PROJECT_DTB_NAMES)))
 ccflags-y += -I$(PPM_ROOT_DIR)/src/mach/mt6893
 else
@@ -32,11 +36,6 @@ ccflags-y += \
 	-I$(srctree)/drivers/misc/mediatek/sspm/	\
 	-I$(srctree)/drivers/misc/mediatek/sspm/$(CONFIG_MTK_PLATFORM)
 endif
-
-# only build-in dummy driver for MT6833
-ifeq ($(CONFIG_MACH_MT6833),y)
-obj-y := mtk_ppm_dummy.o
-else
 
 ifneq ($(CONFIG_FPGA_EARLY_PORTING),y)
 # main
@@ -71,5 +70,4 @@ obj-y += mach/
 else
 # dummy driver to avoid build error
 obj-y := mtk_ppm_dummy.o
-endif
 endif

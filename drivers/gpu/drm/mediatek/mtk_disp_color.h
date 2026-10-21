@@ -191,6 +191,8 @@ bool disp_color_reg_get(struct mtk_ddp_comp *comp,
 void disp_color_set_window(struct mtk_ddp_comp *comp,
 	unsigned int sat_upper, unsigned int sat_lower,
 	unsigned int hue_upper, unsigned int hue_lower);
+void mtk_color_setbypass(struct mtk_ddp_comp *comp, struct cmdq_pkt *handle,
+		bool bypass);
 void ddp_color_bypass_color(struct mtk_ddp_comp *comp, int bypass,
 		struct cmdq_pkt *handle);
 

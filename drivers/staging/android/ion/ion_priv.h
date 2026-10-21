@@ -472,11 +472,11 @@ void ion_cma_heap_destroy(struct ion_heap *heap);
  * on many systems
  */
 struct ion_page_pool {
-	int high_count;
-	int low_count;
+	atomic_t high_count;
+	atomic_t low_count;
 	bool cached;
-	struct list_head high_items;
-	struct list_head low_items;
+	struct llist_head high_items;
+	struct llist_head low_items;
 	struct mutex mutex; /* mutex */
 	gfp_t gfp_mask;
 	unsigned int order;
@@ -543,5 +543,9 @@ int ion_share_dma_buf_fd_nolock(struct ion_client *client,
 
 struct ion_handle *pass_to_user(struct ion_handle *handle);
 void user_ion_free_nolock(struct ion_client *client, struct ion_handle *handle);
+
+struct ion_handle *__ion_alloc(struct ion_client *client, size_t len,
+			       size_t align, unsigned int heap_id_mask,
+			       unsigned int flags, bool grab_handle);
 
 #endif /* _ION_PRIV_H */

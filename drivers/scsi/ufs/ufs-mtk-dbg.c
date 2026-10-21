@@ -31,6 +31,7 @@
 
 #include "ufs-mtk-dbg.h"
 #include "ufs.h"
+#include "ufshcd.h"
 #include <mt-plat/mtk_boot.h>
 
 
@@ -44,6 +45,7 @@
 #define MAX_UFS_CMD_HLIST_ENTRY_CNT (500)
 /* max dump size is 40KB whitch can be adjusted */
 #define UFS_AEE_BUFFER_SIZE (100 * 1024)
+
 
 struct ufs_cmd_hlist_struct ufs_cmd_hlist[MAX_UFS_CMD_HLIST_ENTRY_CNT];
 int ufs_cmd_ptr = MAX_UFS_CMD_HLIST_ENTRY_CNT - 1;
@@ -180,10 +182,14 @@ void ufs_mtk_dbg_add_trace(struct ufs_hba *hba,
 			 * length(4KB)[23:16]
 			 * duration(ms)[15:0]
 			 */
-			ufshcd_update_reg_hist(&hba->ufs_stats.perf_warn,
+			ufshcd_update_evt_hist(hba, UFS_EVT_PERF_WARN,
 			    (u32) ((opcode << 24) |
 			    (((transfer_len >> 12) & 0xFF) << 16) |
+#if BITS_PER_LONG == 32
+			    (div_u64(ufs_cmd_hlist[ufs_cmd_ptr].duration, 1000000))));
+#else
 			    (ufs_cmd_hlist[ufs_cmd_ptr].duration / 1000000)));
+#endif
 		}
 	}
 
@@ -394,7 +400,7 @@ void ufs_mtk_dbg_hang_detect_dump(void)
 	ufs_mtk_dbg_dump_trace(NULL, NULL,
 		ufs_mtk_hba->nutrs + ufs_mtk_hba->nutrs / 2, NULL);
 
-	ufshcd_print_all_err_hist(ufs_mtk_hba, NULL, NULL, NULL);
+	ufshcd_print_all_evt_hist(ufs_mtk_hba, NULL, NULL, NULL);
 #endif
 }
 
@@ -415,7 +421,7 @@ void ufs_mtk_dbg_proc_dump(struct seq_file *m)
 	ufs_mtk_dbg_dump_trace(NULL, NULL,
 		MAX_UFS_CMD_HLIST_ENTRY_CNT, m);
 
-	ufshcd_print_all_err_hist(ufs_mtk_hba, m, NULL, NULL);
+	ufshcd_print_all_evt_hist(ufs_mtk_hba, m, NULL, NULL);
 #endif
 }
 
@@ -435,7 +441,7 @@ void get_ufs_aee_buffer(unsigned long *vaddr, unsigned long *size)
 	ufs_mtk_dbg_dump_trace(&buff, &free_size,
 		MAX_UFS_CMD_HLIST_ENTRY_CNT, NULL);
 
-	ufshcd_print_all_err_hist(ufs_mtk_hba,
+	ufshcd_print_all_evt_hist(ufs_mtk_hba,
 		NULL, &buff, &free_size);
 
 	/* retrun start location */
@@ -560,8 +566,9 @@ static ssize_t ufs_debug_proc_write(struct file *file, const char *buf,
 	size_t count, loff_t *data)
 {
 	unsigned long op = UFS_CMD_UNKNOWN;
-	bool handled = false;
+	bool handled = true;
 	struct ufs_hba *hba = ufs_mtk_hba;
+	struct ufs_mtk_host *host = ufshcd_get_variant(hba);
 
 	if (count == 0 || count > 255)
 		return -EINVAL;
@@ -582,11 +589,21 @@ static ssize_t ufs_debug_proc_write(struct file *file, const char *buf,
 	if (op == UFS_CMD_HIST_BEGIN) {
 		atomic_set(&cmd_hist_enabled, 1);
 		dev_info(hba->dev, "cmd history on\n");
-		handled = true;
 	} else if (op == UFS_CMD_HIST_STOP) {
 		atomic_set(&cmd_hist_enabled, 0);
 		dev_info(hba->dev, "cmd history off\n");
-		handled = true;
+	} else if (op == UFS_CMD_QOS_ON) {
+		if (host && host->qos_allowed) {
+			host->qos_enabled = true;
+			dev_info(hba->dev, "QoS on\n");
+		}
+	} else if (op == UFS_CMD_QOS_OFF) {
+		if (host && host->qos_allowed) {
+			host->qos_enabled = false;
+			dev_info(hba->dev, "QoS off\n");
+		}
+	} else {
+		handled = false;
 	}
 
 	ufs_mtk_dbg_add_trace(hba,
@@ -700,6 +717,350 @@ static const struct file_operations ufs_perf_fops = {
 #define PROC_PERM		0440
 #endif
 
+	};
+
+	struct desc_field_offset config_unit_field_name[] = {
+		{"bLUEnable",			0x00, BYTE},
+		{"bBootLunID",			0x01, BYTE},
+		{"bLUWriteProtect",		0x02, BYTE},
+		{"bMemoryType",			0x03, BYTE},
+		{"dNumAllocUnits",		0x04, DWORD},
+		{"bDataReliability",		0x08, BYTE},
+		{"bLogicalBlockSize",		0x09, BYTE},
+		{"bProvisioningType",		0x0A, BYTE},
+		{"wContextCapabilities",	0x0B, WORD},
+#if 0
+		{"dLUWriteBoosterBufferAllocUnits", 0x16, DWORD},
+#endif
+	};
+
+	if (!hba) {
+		printk("hba is null\n", __func__);
+		return -1;
+	}
+
+	config_buf = kzalloc(hba->desc_size.conf_desc, GFP_KERNEL);
+	if (!config_buf)
+		return -ENOMEM;
+	desc_buf = kzalloc(hba->desc_size.dev_desc, GFP_KERNEL);
+	if (!desc_buf) {
+		kfree(config_buf);
+		return -ENOMEM;
+	}
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_device_desc(hba, desc_buf, hba->desc_size.dev_desc);
+	pm_runtime_put_sync(hba->dev);
+
+	if (err){
+		seq_printf(file, "Reading Device Descriptor failed. err =%d\n", err);
+		goto out;
+	}
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_config_desc(hba, config_buf, hba->desc_size.conf_desc);
+	pm_runtime_put_sync(hba->dev);
+
+	if(!err) {
+		for (i=0; i<ARRAY_SIZE(config_device_field_name); ++i){
+			tmp = &config_device_field_name[i];
+			seq_printf(file,
+					"Config head and Device configurable parameters[Byte offset 0x%x]: %s = 0x%x\n",
+					tmp->offset,
+					tmp->name,
+					array_to_hex_val(&config_buf[tmp->offset], tmp->width_byte));
+		}
+		for (i=0; i<8; i++){
+			s_offset = desc_buf[DEVICE_DESC_PARAM_UD_OFFSET] + i*desc_buf[DEVICE_DESC_PARAM_UD_LEN];
+			for (j=0; j<ARRAY_SIZE(config_unit_field_name); ++j){
+				tmp = &config_unit_field_name[j];
+				offset = s_offset + tmp->offset;
+				seq_printf(file,
+						"Unit Descriptor %d configurable parameters[Byte offset 0x%x]: %s = 0x%x\n",
+						i,
+						offset,
+						tmp->name,
+						array_to_hex_val(&config_buf[offset], tmp->width_byte));
+			}
+		}
+	} else {
+		seq_printf(file, "Reading Configuration Descriptor failed. err = %d\n",
+				err);
+	}
+
+out:
+	kfree(config_buf);
+	kfree(desc_buf);
+	return err;
+}
+
+static int ufsdbg_dump_unit_desc_show(struct seq_file *file, void *data)
+{
+	int err = 0, i, j;
+	struct ufs_hba *hba = ufs_mtk_hba;
+	u8 *unit_buf = NULL;
+	struct desc_field_offset *tmp;
+
+	struct desc_field_offset unit_desc_field_name[] = {
+		{"bLength",			0x00, BYTE},
+		{"bDescriptorType",		0x01, BYTE},
+		{"bUnitIndex",			0x02, BYTE},
+		{"bLUEnable",			0x03, BYTE},
+		{"bBootLunID",			0x04, BYTE},
+		{"bLUWriteProtect",		0x05, BYTE},
+		{"bLUQueueDepth",		0x06, BYTE},
+		{"bMemoryType",			0x08, BYTE},
+		{"bDataReliability",		0x09, BYTE},
+		{"bLogicalBlockSize",		0x0A, BYTE},
+		{"qLogicalBlockCount",		0x0B, LONG},
+		{"qEraseBlockSize",		0x13, DWORD},
+		{"bProvisioningType",		0x17, BYTE},
+		{"qPhyMemResourceCount",	0x18, LONG},
+		{"wContextCapabilities",	0x20, WORD},
+		{"bLargeUnitGranularity_M1",	0x22, BYTE},
+		{"dLUNumWriteBoosterBufferAllocUnits", 0x29, DWORD},
+	};
+	struct desc_field_offset unit_rpmb_desc_field_name[] = {
+		{"bLength",			0x00, BYTE},
+		{"bDescriptorType",		0x01, BYTE},
+		{"bUnitIndex",			0x02, BYTE},
+		{"bLUEnable",			0x03, BYTE},
+		{"bBootLunID",			0x04, BYTE},
+		{"bLUWriteProtect",		0x05, BYTE},
+		{"bLUQueueDepth",		0x06, BYTE},
+		{"bMemoryType",			0x08, BYTE},
+		{"bLogicalBlockSize",		0x0A, BYTE},
+		{"qLogicalBlockCount",		0x0B, LONG},
+		{"qEraseBlockSize",		0x13, DWORD},
+		{"bProvisioningType",		0x17, BYTE},
+		{"qPhyMemResourceCount",	0x18, LONG},
+	};
+
+	if (!hba) {
+		printk("hba is null\n", __func__);
+		return -1;
+	}
+
+	unit_buf = kzalloc(hba->desc_size.unit_desc, GFP_KERNEL);
+	if (!unit_buf)
+		return -ENOMEM;
+
+	/* 1. Unit Descriptor */
+	for(i=0; i<8; i++){
+		pm_runtime_get_sync(hba->dev);
+		err = ufshcd_read_unit_desc(hba, i, unit_buf, hba->desc_size.unit_desc);
+		pm_runtime_put_sync(hba->dev);
+		if (err) {
+			seq_printf(file,
+					"Reading %d UNIT Descriptor failed. err = %d\n", i, err);
+			goto out;
+		}
+		for(j=0; j<ARRAY_SIZE(unit_desc_field_name); ++j) {
+			tmp = &unit_desc_field_name[j];
+			if (tmp->offset >= hba->desc_size.unit_desc)
+				break;
+
+			seq_printf(file,
+					"%d UNIT Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+					i,
+					tmp->offset,
+					tmp->name,
+					array_to_hex_val(&unit_buf[tmp->offset], tmp->width_byte));
+		}
+	}
+
+	/* 2. RPMB Unit Descriptor */
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_unit_desc(hba, 0xC4, unit_buf, hba->desc_size.unit_desc);
+	pm_runtime_put_sync(hba->dev);
+	if (err) {
+		seq_printf(file,
+				"Reading RPMB UNIT Descriptor failed. err = %d\n", err);
+		goto out;
+	}
+	for(i=0; i<ARRAY_SIZE(unit_rpmb_desc_field_name); ++i) {
+		tmp = &unit_desc_field_name[i];
+		seq_printf(file,
+				"RPMB UNIT Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+				tmp->offset,
+				tmp->name,
+				array_to_hex_val(&unit_buf[tmp->offset], tmp->width_byte));
+	}
+
+out:
+	kfree(unit_buf);
+	return err;
+
+}
+
+static int ufsdbg_dump_inter_desc_show(struct seq_file *file, void *data)
+{
+	int err = 0, i;
+	struct ufs_hba *hba = ufs_mtk_hba;
+	u8 *inter_desc_buf = NULL;
+	struct desc_field_offset *tmp;
+
+	struct desc_field_offset inter_desc_field_name[] = {
+		{"bLength",			0x00, BYTE},
+		{"bDescriptorType",		0x01, BYTE},
+		{"bcdUniProVersion",		0x02, WORD},
+		{"bcdMphyVersion",		0x04, WORD},
+	};
+
+	if (!hba) {
+		printk("hba is null\n", __func__);
+		return -1;
+	}
+
+	inter_desc_buf = kzalloc(hba->desc_size.interc_desc, GFP_KERNEL);
+	if (!inter_desc_buf)
+		return -ENOMEM;
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_inter_desc(hba, inter_desc_buf, hba->desc_size.interc_desc);
+	pm_runtime_put_sync(hba->dev);
+
+	if(!err) {
+		for (i=0; i<ARRAY_SIZE(inter_desc_field_name); ++i) {
+			tmp = &inter_desc_field_name[i];
+			seq_printf(file,
+					"Interconnect Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+					tmp->offset,
+					tmp->name,
+					array_to_hex_val(&inter_desc_buf[tmp->offset], tmp->width_byte));
+		}
+	} else {
+		seq_printf(file, "Reading Interconnect Descriptor failed. err = %d\n", err);
+	}
+
+	kfree(inter_desc_buf);
+	return err;
+}
+
+static int ufsdbg_dump_power_desc_show(struct seq_file *file, void *data)
+{
+	int err = 0, i;
+	struct ufs_hba *hba = ufs_mtk_hba;
+	u8 *power_desc_buf = NULL;
+	struct desc_field_offset *tmp;
+
+	struct desc_field_offset power_desc_field_name[] = {
+		{"bLength",			0x00, BYTE},
+		{"bDescriptorType",		0x01, BYTE},
+		{"wActiveICCLevelsVCC",		0x02, 32},
+		{"wActiveICCLevelsVCCQ",	0x22, 32},
+		{"wActiveICCLevelsVCCQ2",	0x42, 32},
+	};
+
+	if (!hba) {
+		printk("hba is null\n", __func__);
+		return -1;
+	}
+
+	power_desc_buf = kzalloc(hba->desc_size.pwr_desc, GFP_KERNEL);
+	if (!power_desc_buf)
+		return -ENOMEM;
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_power_desc(hba, power_desc_buf, hba->desc_size.pwr_desc);
+	pm_runtime_put_sync(hba->dev);
+
+	if(!err) {
+		for (i=0; i<ARRAY_SIZE(power_desc_field_name); ++i) {
+			tmp = &power_desc_field_name[i];
+			seq_printf(file,
+					"Power Parameters Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+					tmp->offset,
+					tmp->name,
+					array_to_hex_val(&power_desc_buf[tmp->offset], tmp->width_byte));
+		}
+	} else {
+		seq_printf(file, "Reading Power Parameters Descriptor failed. err = %d\n", err);
+	}
+
+	kfree(power_desc_buf);
+	return err;
+}
+
+static int ufsdbg_dump_device_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_device_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_device_desc = {
+	.open		= ufsdbg_dump_device_desc_open,
+	.read		= seq_read,
+};
+
+static int ufsdbg_dump_geo_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_geo_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_geo_desc = {
+	.open       = ufsdbg_dump_geo_desc_open,
+	.read       = seq_read,
+};
+
+static int ufsdbg_dump_string_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_string_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_string_desc = {
+	.open       = ufsdbg_dump_string_desc_open,
+	.read       = seq_read,
+};
+
+static int ufsdbg_dump_config_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_config_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_config_desc = {
+	.open       = ufsdbg_dump_config_desc_open,
+	.read       = seq_read,
+};
+
+static int ufsdbg_dump_unit_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_unit_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_unit_desc = {
+	.open       = ufsdbg_dump_unit_desc_open,
+	.read       =seq_read,
+};
+
+static int ufsdbg_dump_inter_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_inter_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_inter_desc = {
+	.open       = ufsdbg_dump_inter_desc_open,
+	.read       =seq_read,
+};
+
+static int ufsdbg_dump_power_desc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file,
+			ufsdbg_dump_power_desc_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_dump_power_desc = {
+	.open       = ufsdbg_dump_power_desc_open,
+	.read       =seq_read,
+};
+
+#endif
+
 int ufs_mtk_debug_proc_init(struct ufs_hba *hba)
 {
 	struct ufs_mtk_host *host;
@@ -737,6 +1098,7 @@ int ufs_mtk_debug_proc_init(struct ufs_hba *hba)
 		proc_set_user(prEntry, uid, gid);
 	else
 		pr_info("%s: failed to create /proc/ufs_perf\n", __func__);
+
 
 	return 0;
 }

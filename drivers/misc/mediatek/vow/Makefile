@@ -29,14 +29,14 @@ ifeq ($(PCMCALLBACK_TYPE),2nd_stage)
 subdir-ccflags-y += -DCONFIG_MTK_VOW_2NDSTAGE_PCMCALLBACK
 endif
 
-ifneq (,$(filter $(MTK_PLATFORM), mt6785 mt6771 mt6768))
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/vow/v01
-obj-y += v01/
-else
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/vow/v02
-obj-y += v02/
-endif
 endif
 
-# MTK vow driver interface
-obj-y += $(MTK_PLATFORM)/
+DSP_VERSION := $(subst ",,$(CONFIG_MTK_VOW_DSP_VERSION))
+
+ifneq ($(DSP_VERSION), )
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/vow/$(DSP_VERSION)
+
+obj-$(CONFIG_MTK_VOW_SUPPORT) += $(DSP_VERSION)/
+
+endif
