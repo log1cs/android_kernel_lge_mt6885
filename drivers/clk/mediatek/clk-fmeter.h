@@ -20,8 +20,8 @@
 #include "clk-mt6873-fmeter.h"
 #elif defined(CONFIG_COMMON_CLK_MT6853)
 #include "clk-mt6853-fmeter.h"
-#elif defined(CONFIG_COMMON_CLK_MT6833)
-#include "clk-mt6833-fmeter.h"
 #endif
 
+#define FM_SYS(_id)		((_id & (0xFF00)) >> 8)
+#define FM_ID(_id)		(_id & (0xFF))
 #endif
