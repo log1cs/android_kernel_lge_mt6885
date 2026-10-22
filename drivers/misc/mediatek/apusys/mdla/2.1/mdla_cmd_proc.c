@@ -106,6 +106,7 @@ int mdla_run_command_sync(
 	/*forward compatibility temporary, This will be replaced by apusys*/
 	int opp_rand = 0;
 	int boost_val = 0;
+	uint32_t cmdbuf_size = 0;
 
 	if (unlikely(cd == NULL || mdla_info == NULL))
 		return -EINVAL;
@@ -159,6 +160,16 @@ int mdla_run_command_sync(
 
 	/* prepare CE */
 	mdla_run_command_prepare(cd, apusys_hd, ce, priority);
+
+	/* check kva and mva are valid */
+	if (ce->kva == 0)
+		return -EINVAL;
+	/* check ce->count is valid */
+	cmdbuf_size =
+		apusys_hd->cmd_entry + apusys_hd->size - (uint64_t)ce->kva;
+	if (ce->count * MREG_CMD_SIZE > cmdbuf_size)
+		return -EINVAL;
+
 #ifdef __APUSYS_MDLA_PMU_SUPPORT__
 	if (likely(!pmu_apusys_pmu_addr_check(apusys_hd))) {
 		pmu_command_prepare(
@@ -176,8 +187,14 @@ int mdla_run_command_sync(
 			core_id, opp_rand);
 		apu_device_set_opp(MDLA0+core_id, opp_rand);
 	}
-	if (ce->priority == MDLA_LOW_PRIORITY && ce->batch_list_head != NULL)
+	if (ce->priority == MDLA_LOW_PRIORITY && ce->batch_list_head != NULL) {
+		/* Allocate backup memory space */
+		ce->cmd_int_backup =
+			kcalloc(ce->count, sizeof(uint32_t), GFP_KERNEL);
+		ce->cmd_ctrl_1_backup =
+			kcalloc(ce->count, sizeof(uint32_t), GFP_KERNEL);
 		mdla_split_command_batch(ce);
+	}
 
 	/* trace start */
 	mdla_trace_begin(core_id, ce);
@@ -246,11 +263,23 @@ int mdla_run_command_sync(
 	cd->id = ce->fin_cid;
 #ifdef __APUSYS_MDLA_PMU_SUPPORT__
 	if (!pmu_apusys_pmu_addr_check(apusys_hd))
-		pmu_command_counter_prt(mdla_info, ce->priority);
+		pmu_command_counter_prt(
+			apusys_hd, mdla_info,
+			(u16)ce->priority, ce);
 #endif
 
 error_handle:
 	ce->wait_t = sched_clock();
+
+	/* restore cmdbuf */
+	if (ce->priority == MDLA_LOW_PRIORITY && ce->batch_list_head != NULL) {
+		mdla_restore_cmd_batch(ce);
+		/* free backup memory space */
+		if (ce->cmd_int_backup != NULL)
+			kfree(ce->cmd_int_backup);
+		if (ce->cmd_ctrl_1_backup != NULL)
+			kfree(ce->cmd_ctrl_1_backup);
+	}
 
 	spin_lock_irqsave(&sched->lock, flags);
 	if (ce->priority == MDLA_LOW_PRIORITY && ce->batch_list_head != NULL)
@@ -389,7 +418,7 @@ static void mdla_run_command_prepare(
 		ce->ctx_id = apusys_hd->ctx_id;
 		ce->context_callback = apusys_hd->context_callback;
 		apusys_hd->ip_time = 0;
-		ce->kva = (void *)(apusys_hd->cmd_entry+cd->offset_code_buf);
+		ce->kva = (void *)apusys_mem_query_kva((u32)ce->mva);
 		ce->cmdbuf = apusys_hd->cmdbuf;
 		ce->priority = priority;
 		if (apusys_hd->multicore_total == 2) {
@@ -418,6 +447,7 @@ static void mdla_run_command_prepare(
 		ce->cmd_batch_size = cd->count + 1;
 		ce->deadline_t = deadline;
 	}
+
 	cb_size = ce->cmd_batch_size;
 	if (priority == MDLA_LOW_PRIORITY && cb_size < ce->count) {
 		ce->batch_list_head =
