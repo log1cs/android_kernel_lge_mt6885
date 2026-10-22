@@ -46,7 +46,9 @@
 #if SCP_DVFS_INIT_ENABLE
 #include "scp_dvfs.h"
 #endif
+
 #include "mtk_spm_resource_req.h"
+
 #include "scp_scpctl.h"
 
 #ifdef CONFIG_OF_RESERVED_MEM
@@ -54,8 +56,19 @@
 #include "scp_reservedmem_define.h"
 #endif
 
-#if ENABLE_SCP_EMI_PROTECTION
+#ifdef CONFIG_MEDIATEK_EMI
+#include "memory/mediatek/emi.h"
+#endif
+#ifdef CONFIG_MTK_EMI
 #include <mt_emi_api.h>
+#endif
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <linux/delay.h>
+#include <linux/reboot.h>
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#define SCP_DUMP_WAIT_SEC 90
+#define SCP_DUMP_MIN_WAIT_SEC 40
 #endif
 
 /* scp semaphore timeout count definition */
@@ -1140,7 +1153,29 @@ static int scp_reserve_memory_ioremap(void)
 }
 #endif
 
-#if ENABLE_SCP_EMI_PROTECTION
+#ifdef CONFIG_MEDIATEK_EMI
+void set_scp_mpu(void)
+{
+	struct emimpu_region_t md_region;
+	int ret;
+
+	ret = mtk_emimpu_init_region(&md_region, MPU_REGION_ID_SCP_SMEM);
+	if (ret) {
+		pr_notice("[SCP]mtk_emimpu_init_region failed\n");
+		return;
+	}
+	mtk_emimpu_set_addr(&md_region, scp_mem_base_phys,
+		scp_mem_base_phys + scp_mem_size - 1);
+	mtk_emimpu_set_apc(&md_region, MPU_DOMAIN_D0,
+		MTK_EMIMPU_NO_PROTECTION);
+	mtk_emimpu_set_apc(&md_region, MPU_DOMAIN_D3,
+		MTK_EMIMPU_NO_PROTECTION);
+	if (mtk_emimpu_set_protection(&md_region))
+		pr_notice("[SCP]mtk_emimpu_set_protection fail\n");
+	mtk_emimpu_free_region(&md_region);
+}
+#endif
+#ifdef CONFIG_MTK_EMI
 void set_scp_mpu(void)
 {
 	struct emi_region_info_t region_info;
@@ -1532,7 +1567,6 @@ void scp_sys_reset_ws(struct work_struct *ws)
 	/* wake lock AP*/
 	__pm_stay_awake(&scp_reset_lock);
 #ifndef CONFIG_FPGA_EARLY_PORTING
-	/* keep Univpll */
 	spm_resource_req(SPM_RESOURCE_USER_SCP, SPM_RESOURCE_CK_26M);
 #endif  // CONFIG_FPGA_EARLY_PORTING
 
@@ -1553,6 +1587,27 @@ void scp_sys_reset_ws(struct work_struct *ws)
 			, jiffies_to_msecs(1000)) == 0)
 			pr_debug("[SCP] %s: scp ee time out\n", __func__);
 	}
+
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	pr_debug("scp_sys_reset_ws : CONFIG_LGE_HANDLE_PANIC in \n");
+
+	if (lge_get_crash_handle_status()) {
+		dump_stack();
+		pr_err("[LGE] scp_sys_reset_ws : scp_helper wait until SCP dump done.\n");
+		msleep(SCP_DUMP_MIN_WAIT_SEC * 1000);
+
+		if (lge_get_scp_dump_status()) {
+			pr_debug("scp_sys_reset_ws : lge_get_scp_dump_status() in \n");
+			emergency_sync();
+			kernel_restart("LGE Reboot by SCP Exception");
+		} else {
+			pr_debug("scp_sys_reset_ws : panic in \n");
+			panic("SCP Crash!!\n");
+		}
+
+		while (1);
+	}
+#endif
 
 	/*disable scp logger
 	 * 0: scp logger disable
@@ -1890,7 +1945,6 @@ static int __init scp_init(void)
 #endif
 
 #ifndef CONFIG_FPGA_EARLY_PORTING
-	/* keep Univpll */
 	spm_resource_req(SPM_RESOURCE_USER_SCP, SPM_RESOURCE_CK_26M);
 #endif  // CONFIG_FPGA_EARLY_PORTING
 
@@ -1988,7 +2042,7 @@ static int __init scp_init(void)
 	}
 #endif
 
-#if ENABLE_SCP_EMI_PROTECTION
+#ifdef CONFIG_MTK_EMI
 	set_scp_mpu();
 #endif
 
@@ -2059,5 +2113,15 @@ static void __exit scp_exit(void)
 #endif
 }
 
+static int __init scp_late_init(void)
+{
+	pr_notice("[SCP] %s\n", __func__);
+#ifdef CONFIG_MEDIATEK_EMI
+	set_scp_mpu();
+#endif
+	return 0;
+}
+
 module_init(scp_init);
 module_exit(scp_exit);
+late_initcall(scp_late_init);
