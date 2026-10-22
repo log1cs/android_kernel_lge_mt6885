@@ -14,8 +14,8 @@
 #ifndef __MTK_DRM_MMP_H__
 #define __MTK_DRM_MMP_H__
 
-#include "mmprofile.h"
-#include "mmprofile_function.h"
+#include "../../../misc/mediatek/mmp/mmprofile.h"
+#include "../../../misc/mediatek/mmp/mmprofile_function.h"
 #include "mtk_drm_ddp.h"
 
 #define MMP_CRTC_NUM 3
@@ -93,6 +93,9 @@ struct CRTC_MMP_Events {
 	mmp_event backlight_grp;
 	mmp_event ddic_send_cmd;
 	mmp_event ddic_read_cmd;
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	mmp_event panel_tx_cmd_grp;
+#endif
 	mmp_event path_switch;
 	mmp_event user_cmd;
 	mmp_event check_trigger;
@@ -103,6 +106,7 @@ struct CRTC_MMP_Events {
 	mmp_event clk_change;
 	mmp_event layerBmpDump;
 	mmp_event layer_dump[6];
+	mmp_event lcm;
 	mmp_event cwbBmpDump;
 	mmp_event cwb_dump;
 };

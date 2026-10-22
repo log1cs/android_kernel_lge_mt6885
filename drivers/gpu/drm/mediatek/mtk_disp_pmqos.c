@@ -20,12 +20,12 @@
 static struct drm_crtc *dev_crtc;
 
 /* add for mm qos */
-static struct pm_qos_request mm_freq_request;
 static u64 g_freq_steps[MAX_FREQ_STEP];
 static int g_freq_level = -1;
 static int step_size = 1;
 
 #ifdef MTK_FB_MMDVFS_SUPPORT
+static struct pm_qos_request mm_freq_request;
 int __mtk_disp_pmqos_slot_look_up(int comp_id, int mode)
 {
 	switch (comp_id) {
@@ -145,6 +145,7 @@ int __mtk_disp_pmqos_port_look_up(int comp_id)
 	case DDP_COMPONENT_WDMA0:
 		return M4U_PORT_L1_DISP_WDMA0;
 #endif
+
 
 	default:
 		DDPPR_ERR("%s, unknown comp %d\n", __func__, comp_id);
@@ -312,7 +313,7 @@ static void mtk_drm_set_mmclk(struct drm_crtc *crtc, int level,
 	if (drm_crtc_index(crtc) != 0)
 		return;
 
-	if (level < 0 || level > MAX_FREQ_STEP)
+	if (level < 0 || level >= MAX_FREQ_STEP)
 		level = -1;
 
 	if (level == g_freq_level)
@@ -322,11 +323,13 @@ static void mtk_drm_set_mmclk(struct drm_crtc *crtc, int level,
 
 	DDPINFO("%s set mmclk level: %d\n", caller, g_freq_level);
 
+#ifdef MTK_FB_MMDVFS_SUPPORT
 	if (g_freq_level >= 0)
 		pm_qos_update_request(&mm_freq_request,
 			g_freq_steps[g_freq_level]);
 	else
 		pm_qos_update_request(&mm_freq_request, 0);
+#endif
 }
 
 void mtk_drm_set_mmclk_by_pixclk(struct drm_crtc *crtc,
