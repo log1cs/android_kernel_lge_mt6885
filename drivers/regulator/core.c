@@ -39,6 +39,12 @@
 #include "dummy.h"
 #include "internal.h"
 
+#ifdef CONFIG_LGE_PM
+#ifdef CONFIG_PROC_FS
+#include <linux/proc_fs.h>
+#endif
+#endif
+
 #define rdev_crit(rdev, fmt, ...)					\
 	pr_crit("%s: " fmt, rdev_get_name(rdev), ##__VA_ARGS__)
 #define rdev_err(rdev, fmt, ...)					\
@@ -1255,7 +1261,7 @@ static void unset_regulator_supplies(struct regulator_dev *rdev)
 	}
 }
 
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 static ssize_t constraint_flags_read_file(struct file *file,
 					  char __user *user_buf,
 					  size_t count, loff_t *ppos)
@@ -1297,7 +1303,7 @@ static ssize_t constraint_flags_read_file(struct file *file,
 #endif
 
 static const struct file_operations constraint_flags_fops = {
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 	.open = simple_open,
 	.read = constraint_flags_read_file,
 	.llseek = default_llseek,
@@ -4325,7 +4331,7 @@ void *regulator_get_init_drvdata(struct regulator_init_data *reg_init_data)
 }
 EXPORT_SYMBOL_GPL(regulator_get_init_drvdata);
 
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 static int supply_map_show(struct seq_file *sf, void *data)
 {
 	struct regulator_map *map;
@@ -4346,7 +4352,7 @@ static int supply_map_open(struct inode *inode, struct file *file)
 #endif
 
 static const struct file_operations supply_map_fops = {
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 	.open = supply_map_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
@@ -4354,7 +4360,7 @@ static const struct file_operations supply_map_fops = {
 #endif
 };
 
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 struct summary_data {
 	struct seq_file *s;
 	struct regulator_dev *parent;
@@ -4471,7 +4477,7 @@ static int regulator_summary_open(struct inode *inode, struct file *file)
 #endif
 
 static const struct file_operations regulator_summary_fops = {
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 	.open		= regulator_summary_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
@@ -4496,6 +4502,12 @@ static int __init regulator_init(void)
 			    NULL, &regulator_summary_fops);
 
 	regulator_dummy_init();
+
+#ifdef CONFIG_LGE_PM
+#ifdef CONFIG_PROC_FS
+	proc_create("regulator_summary", 0444, NULL, &regulator_summary_fops);
+#endif
+#endif
 
 	return ret;
 }
