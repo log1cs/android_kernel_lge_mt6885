@@ -18,13 +18,22 @@
 #include <linux/spi/spi.h>
 #include <linux/stringify.h>
 
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+static bool ignore_cdone;
+module_param(ignore_cdone, bool, 0644);
+#endif
+
 #define ICE40_SPI_MAX_SPEED 25000000 /* Hz */
 #define ICE40_SPI_MIN_SPEED 1000000 /* Hz */
 
 #define ICE40_SPI_RESET_DELAY 1 /* us (>200ns) */
 #define ICE40_SPI_HOUSEKEEPING_DELAY 1200 /* us */
 
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+#define ICE40_SPI_NUM_ACTIVATION_BYTES (DIV_ROUND_UP(49, 8) * 8)
+#else
 #define ICE40_SPI_NUM_ACTIVATION_BYTES DIV_ROUND_UP(49, 8)
+#endif
 
 struct ice40_fpga_priv {
 	struct spi_device *dev;
@@ -35,6 +44,11 @@ struct ice40_fpga_priv {
 static enum fpga_mgr_states ice40_fpga_ops_state(struct fpga_manager *mgr)
 {
 	struct ice40_fpga_priv *priv = mgr->priv;
+
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	if (ignore_cdone || !priv->cdone)
+		return FPGA_MGR_STATE_OPERATING;
+#endif
 
 	return gpiod_get_value(priv->cdone) ? FPGA_MGR_STATE_OPERATING :
 		FPGA_MGR_STATE_UNKNOWN;
@@ -65,23 +79,44 @@ static int ice40_fpga_ops_write_init(struct fpga_manager *mgr,
 	/* Lock the bus, assert CRESET_B and SS_B and delay >200ns */
 	spi_bus_lock(dev->master);
 
+	#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	gpiod_set_value(priv->reset, 0);	/* CRESET_B LOW */
+	#else
 	gpiod_set_value(priv->reset, 1);
+	#endif
 
 	spi_message_init(&message);
 	spi_message_add_tail(&assert_cs_then_reset_delay, &message);
 	ret = spi_sync_locked(dev, &message);
 
 	/* Come out of reset */
+	#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	gpiod_set_value(priv->reset, 1);		/* CRESET_B High */
+	#else
 	gpiod_set_value(priv->reset, 0);
+	#endif
+
+	#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	if (!gpiod_get_value(priv->reset)) {
+		pr_err("%s CRESET_B does not change high - %d\n",__func__,
+			gpiod_get_value(priv->reset));
+	}
+	#endif
 
 	/* Abort if the chip-select failed */
 	if (ret)
 		goto fail;
 
 	/* Check CDONE is de-asserted i.e. the FPGA is reset */
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	if (priv->cdone)
+#endif
 	if (gpiod_get_value(priv->cdone)) {
 		dev_err(&dev->dev, "Device reset failed, CDONE is asserted\n");
 		ret = -EIO;
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+		if (!ignore_cdone)
+#endif
 		goto fail;
 	}
 
@@ -101,7 +136,27 @@ static int ice40_fpga_ops_write(struct fpga_manager *mgr,
 {
 	struct ice40_fpga_priv *priv = mgr->priv;
 
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	int ret = 0;
+	int retry = 3;
+
+	while(count > 0 && !ret) {
+		int len	= count > 8192 ? 8192 : count;
+		ret	= spi_write_then_read(priv->dev, buf, len, NULL, 0);
+		if (ret == (-ENOMEM)) {
+			retry--;
+			if (retry == 0)	break;
+			ret	= 0;
+		} else{
+			buf += len;
+			count -= len;
+		}
+		/* pr_info("%s ret: %d count: %d retry: %d\n", __func__, ret, count, retry); */
+	}
+	return ret;
+#else
 	return spi_write(priv->dev, buf, count);
+#endif
 }
 
 static int ice40_fpga_ops_write_complete(struct fpga_manager *mgr,
@@ -112,14 +167,24 @@ static int ice40_fpga_ops_write_complete(struct fpga_manager *mgr,
 	const u8 padding[ICE40_SPI_NUM_ACTIVATION_BYTES] = {0};
 
 	/* Check CDONE is asserted */
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	if (priv->cdone)
+#endif
 	if (!gpiod_get_value(priv->cdone)) {
 		dev_err(&dev->dev,
 			"CDONE was not asserted after firmware transfer\n");
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+		if (!ignore_cdone)
+#endif
 		return -EIO;
 	}
 
 	/* Send of zero-padding to activate the firmware */
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	return spi_write_then_read(dev, padding, sizeof(padding), NULL, 0);
+#else
 	return spi_write(dev, padding, sizeof(padding));
+#endif
 }
 
 static const struct fpga_manager_ops ice40_fpga_ops = {
@@ -164,10 +229,18 @@ static int ice40_fpga_probe(struct spi_device *spi)
 	if (IS_ERR(priv->cdone)) {
 		ret = PTR_ERR(priv->cdone);
 		dev_err(dev, "Failed to get CDONE GPIO: %d\n", ret);
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+		priv->cdone = NULL;
+#else
 		return ret;
+#endif
 	}
-
+#ifdef CONFIG_LGE_USB_LATTICE_SLS11HC
+	/* CRESET_B initialized to High */
+	priv->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+#else
 	priv->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+#endif
 	if (IS_ERR(priv->reset)) {
 		ret = PTR_ERR(priv->reset);
 		dev_err(dev, "Failed to get CRESET_B GPIO: %d\n", ret);
