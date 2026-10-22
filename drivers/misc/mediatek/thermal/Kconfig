@@ -5,3 +5,5 @@ config MTK_THERMAL_PA_VIA_ATCMD
 	  to query modem RF temperature
 	  via AT command.
 	  (RIL sockets)
+
+source "drivers/misc/mediatek/thermal/lge/Kconfig"

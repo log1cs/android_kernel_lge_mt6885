@@ -59,3 +59,4 @@ obj-y += mt6893/
 else
 obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 endif
+obj-$(CONFIG_LGE_PM) += lge/

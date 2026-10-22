@@ -94,6 +94,17 @@ static struct apthermolmt_user _gp = {
 	.gpu_limit = 0x7FFFFFFF,
 	.ptr = &_gp
 };
+
+#ifdef CONFIG_LGE_PM_TMR
+static struct apthermolmt_user _tmr = {
+	.log = "tmr ",
+	.cpu_limit = 0x7FFFFFFF,
+	.vpu_limit = 0x7FFFFFFF,
+	.mdla_limit = 0x7FFFFFFF,
+	.gpu_limit = 0x7FFFFFFF,
+	.ptr = &_tmr
+};
+#endif
 static struct apthermolmt_user *_users[AP_THERMO_LMT_MAX_USERS] = {
 			&_gp, &_dummy, &_dummy, &_dummy, &_dummy};
 
@@ -101,6 +112,12 @@ static unsigned int gp_prev_cpu_pwr_limit;
 static unsigned int gp_curr_cpu_pwr_limit;
 static unsigned int gp_prev_gpu_pwr_limit;
 static unsigned int gp_curr_gpu_pwr_limit;
+#ifdef CONFIG_LGE_PM_TMR
+static unsigned int tmr_prev_cpu_pwr_boost;
+static unsigned int tmr_curr_cpu_pwr_boost;
+static unsigned int tmr_prev_gpu_pwr_boost;
+static unsigned int tmr_curr_gpu_pwr_boost;
+#endif
 
 static DEFINE_MUTEX(apthermolmt_cpu_mutex);
 
@@ -202,6 +219,11 @@ struct apthermolmt_user *handle, unsigned int limit)
 	final_limit = MIN(final_limit, _users[4]->cpu_limit);
 #else
 #error "handle this!"
+#endif
+
+#ifdef CONFIG_LGE_PM_TMR
+	if (_tmr.cpu_limit != 0x7FFFFFFF)
+		final_limit = MAX(final_limit, _tmr.cpu_limit);
 #endif
 
 	apthermolmt_prev_cpu_pwr_lim = apthermolmt_curr_cpu_pwr_lim;
@@ -352,6 +374,11 @@ struct apthermolmt_user *handle, unsigned int limit)
 #error "handle this!"
 #endif
 
+#ifdef CONFIG_LGE_PM_TMR
+	if (_tmr.gpu_limit != 0x7FFFFFFF)
+		final_limit = MAX(final_limit, _tmr.gpu_limit);
+#endif
+
 	apthermolmt_prev_gpu_pwr_lim = apthermolmt_curr_gpu_pwr_lim;
 	apthermolmt_curr_gpu_pwr_lim = final_limit;
 
@@ -444,3 +471,30 @@ unsigned int apthermolmt_get_mdla_min_power(void)
 EXPORT_SYMBOL(apthermolmt_get_mdla_min_power);
 #endif
 
+#ifdef CONFIG_LGE_PM_TMR
+void apthermolmt_set_tmr_cpu_power_boost(unsigned int boost)
+{
+	tmr_prev_cpu_pwr_boost = tmr_curr_cpu_pwr_boost;
+	tmr_curr_cpu_pwr_boost = (boost != 0) ? boost : 0x7FFFFFFF;
+
+	if (tmr_prev_cpu_pwr_boost != tmr_curr_cpu_pwr_boost) {
+		tscpu_warn("%s %d\n", __func__, tmr_curr_cpu_pwr_boost);
+
+		apthermolmt_set_cpu_power_limit(&_tmr, tmr_curr_cpu_pwr_boost);
+	}
+}
+EXPORT_SYMBOL(apthermolmt_set_tmr_cpu_power_boost);
+
+void apthermolmt_set_tmr_gpu_power_boost(unsigned int boost)
+{
+	tmr_prev_gpu_pwr_boost = tmr_curr_gpu_pwr_boost;
+	tmr_curr_gpu_pwr_boost = (boost != 0) ? boost : 0x7FFFFFFF;
+
+	if (tmr_prev_gpu_pwr_boost != tmr_curr_gpu_pwr_boost) {
+		tscpu_warn("%s %d\n", __func__, tmr_curr_gpu_pwr_boost);
+
+		apthermolmt_set_gpu_power_limit(&_tmr, tmr_curr_gpu_pwr_boost);
+	}
+}
+EXPORT_SYMBOL(apthermolmt_set_tmr_gpu_power_boost);
+#endif
