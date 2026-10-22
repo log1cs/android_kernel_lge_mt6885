@@ -2039,6 +2039,15 @@ void battery_recovery_init(void)
 		bm_err("battery_recovery %d %d\n",
 			fg_table_cust_data.fg_profile[0].pseudo100,
 			fg_table_cust_data.fg_profile[0].size);
+#ifdef CONFIG_LGE_PM_BATTERY_PRESENT
+	} else {
+		/*
+		 * to prevent kernel panic without battery,
+		 * initialize cust data for fgr.
+		 */
+		bm_err("battery_recovery: enter fgr_set_cust_data\n");
+		fgr_set_cust_data();
+#endif
 	}
 	bm_err("[battery_recovery] is_evb:%d,%d is_bat_exist %d\n",
 		is_fg_disabled(), fg_interrupt_check(), is_bat_exist);

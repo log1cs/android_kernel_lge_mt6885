@@ -111,6 +111,11 @@ int mtk_pe50_plugout_reset(struct charger_manager *chgmgr)
 	struct mtk_pe50 *pe50 = &chgmgr->pe5;
 	struct switch_charging_alg_data *swchgalg = chgmgr->algorithm_data;
 
+#ifdef CONFIG_LGE_PM
+	if (!pe50->online)
+		return 0;
+#endif
+
 	ret = prop_chgalgo_plugout_reset(pe50->pca_algo);
 	pe50->online = false;
 	swchgalg->state = CHR_CC;
@@ -250,4 +255,20 @@ int mtk_pe50_stop_algo(struct charger_manager *chgmgr, bool rerun)
 
 	return ret;
 }
+
+#ifdef CONFIG_LGE_PM
+int mtk_pe50_set_test_mode(struct charger_manager *chgmgr, bool test_mode)
+{
+	struct mtk_pe50 *pe50 = &chgmgr->pe5;
+
+	return prop_chgalgo_set_test_mode(pe50->pca_algo, test_mode);
+}
+
+bool mtk_pe50_is_charging(struct charger_manager *chgmgr)
+{
+	struct mtk_pe50 *pe50 = &chgmgr->pe5;
+
+	return prop_chgalgo_is_algo_charging(pe50->pca_algo);
+}
+#endif
 #endif
