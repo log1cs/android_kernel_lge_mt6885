@@ -25,6 +25,9 @@
 #include <mt-plat/charger_class.h>
 #include <linux/alarmtimer.h>
 #endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+#include <linux/lge_ds3.h>
+#endif
 
 struct usbotg_boost {
 	struct platform_device *pdev;
@@ -40,9 +43,11 @@ struct usbotg_boost {
 };
 static struct usbotg_boost *g_info;
 
+#ifndef CONFIG_LGE_USB
 static struct pinctrl *drvvbus;
 static struct pinctrl_state *drvvbus_high;
 static struct pinctrl_state *drvvbus_low;
+#endif
 
 #if CONFIG_MTK_GAUGE_VERSION == 30
 static void usbotg_alarm_start_timer(struct usbotg_boost *info)
@@ -102,6 +107,7 @@ static enum alarmtimer_restart
 
 int usb_otg_set_vbus(int is_on)
 {
+#ifndef CONFIG_LGE_USB
 	if (!IS_ERR(drvvbus)) {
 		if (is_on)
 			pinctrl_select_state(drvvbus, drvvbus_high);
@@ -110,32 +116,76 @@ int usb_otg_set_vbus(int is_on)
 
 		return 0;
 	}
+#endif
 
 	if (!g_info)
 		return -1;
 
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	if (is_on) {
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(true);
+#endif
+#ifdef CONFIG_LGE_USB
+		control_otg_en(is_on);
+#endif
 		charger_dev_enable_otg(g_info->primary_charger, true);
+#ifdef CONFIG_LGE_USB
+		charger_dev_set_boost_voltage(g_info->primary_charger, 5100000);
+#endif
 		charger_dev_set_boost_current_limit(g_info->primary_charger,
 			1500000);
-		charger_dev_kick_wdt(g_info->primary_charger);
-		enable_boost_polling(true);
+		if (g_info->polling_interval) {
+			charger_dev_kick_wdt(g_info->primary_charger);
+			enable_boost_polling(true);
+		}
 	} else {
 		charger_dev_enable_otg(g_info->primary_charger, false);
-		enable_boost_polling(false);
+		if (g_info->polling_interval)
+			enable_boost_polling(false);
+#ifdef CONFIG_LGE_USB
+		control_otg_en(is_on);
+#endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(false);
+#endif
 	}
 #else
 	if (is_on) {
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(true);
+#endif
+#ifdef CONFIG_LGE_USB
+		control_otg_en(is_on);
+#endif
 		charger_dev_enable_otg(g_info->primary_charger, true);
+#ifdef CONFIG_LGE_USB
+		charger_dev_set_boost_voltage(g_info->primary_charger, 5100000);
+#endif
 		charger_dev_set_boost_current_limit(g_info->primary_charger,
 			1500000);
 	} else {
 		charger_dev_enable_otg(primary_charger, false);
+#ifdef CONFIG_LGE_USB
+		control_otg_en(is_on);
+#endif
+#ifdef CONFIG_LGE_DUAL_SCREEN
+		set_ds_vbus2_on(false);
+#endif
 	}
 #endif
 	return 0;
 }
+
+#ifdef CONFIG_LGE_USB
+void control_otg_en(bool en)
+{
+	if (en)
+		devm_pinctrl_get_select(&g_info->pdev->dev, "otg_enable");
+	else
+		devm_pinctrl_get_select(&g_info->pdev->dev, "otg_disable");
+}
+#endif
 
 static int usbotg_boost_probe(struct platform_device *pdev)
 {
@@ -143,6 +193,7 @@ static int usbotg_boost_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
 
+#ifndef CONFIG_LGE_USB
 	drvvbus = devm_pinctrl_get(dev);
 	if (IS_ERR(drvvbus)) {
 		pr_notice("Cannot find usb pinctrl!\n");
@@ -159,6 +210,7 @@ static int usbotg_boost_probe(struct platform_device *pdev)
 		}
 		return 0;
 	}
+#endif
 
 	info = devm_kzalloc(&pdev->dev, sizeof(struct usbotg_boost),
 		GFP_KERNEL);
@@ -177,10 +229,11 @@ static int usbotg_boost_probe(struct platform_device *pdev)
 	alarm_init(&info->otg_timer, ALARM_BOOTTIME,
 		usbotg_alarm_timer_func);
 	if (of_property_read_u32(node, "boost_period",
-		(u32 *) &info->polling_interval))
-		return -EINVAL;
+		(u32 *) &info->polling_interval)) {
+		pr_info("%s: get boost_period failed\n", __func__);
+		info->polling_interval = 0;
+	}
 
-	info->polling_interval = 30;
 	info->boost_workq = create_singlethread_workqueue("boost_workq");
 	INIT_WORK(&info->kick_work, usbotg_boost_kick_work);
 #endif

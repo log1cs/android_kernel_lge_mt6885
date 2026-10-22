@@ -119,7 +119,11 @@ int mt_usb_dual_role_init(struct device *dev)
 	if (!dual_desc)
 		return -ENOMEM;
 
+	#ifdef CONFIG_LGE_USB_TYPE_C
+	dual_desc->name = "otg_default";
+	#else
 	dual_desc->name = "dual-role-usb20";
+	#endif
 	dual_desc->supported_modes = DUAL_ROLE_SUPPORTED_MODES_DFP_AND_UFP;
 	dual_desc->properties = mt_dual_role_props;
 	dual_desc->num_properties = ARRAY_SIZE(mt_dual_role_props);
