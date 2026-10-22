@@ -36,6 +36,10 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <soc/mediatek/lge/lge_handle_panic.h>
+#endif
+
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
 #ifdef __aarch64__
@@ -910,6 +914,12 @@ static int ramoops_probe(struct platform_device *pdev)
 		cxt->size, (unsigned long long)cxt->phys_addr,
 		cxt->ecc_info.ecc_size, cxt->ecc_info.block_size);
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+	/* write ramoops console addr to crash_footprint */
+	lge_set_ram_console_addr(cxt->cprz->paddr, cxt->cprz->size);
+	pr_info("lge_set_ram_console_addr: 0x%x@0x%llx\n",
+				cxt->cprz->size, cxt->cprz->paddr);
+#endif
 	return 0;
 
 fail_buf:
