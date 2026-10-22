@@ -246,7 +246,11 @@ static void switch_port_to_device(struct ssusb_mtk *ssusb)
 	u32 check_clk = 0;
 	struct mtu3 *mtu = ssusb->u3d;
 
+	#ifdef CONFIG_LGE_USB_TYPE_C
+	dev_info(ssusb->dev, "%s set super speed(%d)\n", __func__, mtu3_speed);
+	#else
 	dev_info(ssusb->dev, "%s\n", __func__);
+	#endif
 	ssusb->otg_switch.is_u3_drd = mtu3_speed;
 	if (ssusb->otg_switch.is_u3_drd)
 		mtu->max_speed = USB_SPEED_SUPER;
@@ -482,7 +486,9 @@ int ssusb_otg_switch_init(struct ssusb_mtk *ssusb)
 
 	INIT_DELAYED_WORK(&otg_sx->extcon_reg_dwork, extcon_register_dwork);
 
+#ifdef CONFIG_PROC_FS
 	ssusb_debugfs_init(ssusb);
+#endif
 
 	/* It is enough to delay 1s for waiting for host initialization */
 	schedule_delayed_work(&otg_sx->extcon_reg_dwork, HZ/2);
@@ -504,6 +510,8 @@ void ssusb_otg_switch_exit(struct ssusb_mtk *ssusb)
 			EXTCON_USB_HOST, &otg_sx->id_nb);
 	}
 
+#ifdef CONFIG_PROC_FS
 	ssusb_debugfs_exit(ssusb);
+#endif
 	g_otg_sx = NULL;
 }

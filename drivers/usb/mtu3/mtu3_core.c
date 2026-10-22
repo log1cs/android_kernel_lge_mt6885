@@ -29,6 +29,9 @@
 #ifdef CONFIG_USB_MTU3_PLAT_PHONE
 static u32 sts_ltssm;
 #endif
+#ifdef CONFIG_LGE_USB
+#include <mt-plat/mtk_boot.h>
+#endif
 
 static int ep_fifo_alloc(struct mtu3_ep *mep, u32 seg_size)
 {
@@ -81,9 +84,19 @@ static void ep_fifo_free(struct mtu3_ep *mep)
 static inline void mtu3_ss_func_set(struct mtu3 *mtu, bool enable)
 {
 	/* If usb3_en==0, LTSSM will go to SS.Disable state */
-	if (enable)
+	if (enable) {
+#ifdef CONFIG_FPGA_EARLY_PORTING
+		/*
+		 * A60931 new DTB has true type-C connector.
+		 * Phy sends vbus_present and starts to swap lane.
+		 * It will take about 120ms to swap lane if needed.
+		 * Device shall wait lane swap and then enable U3 terminator.
+		 */
+		if (mtu->ssusb->fpga_phy_ver == A60931)
+			mdelay(180);
+#endif
 		mtu3_setbits(mtu->mac_base, U3D_USB3_CONFIG, USB3_EN);
-	else
+	} else
 		mtu3_clrbits(mtu->mac_base, U3D_USB3_CONFIG, USB3_EN);
 
 	dev_dbg(mtu->dev, "USB3_EN = %d\n", !!enable);
@@ -618,6 +631,9 @@ static irqreturn_t mtu3_link_isr(struct mtu3 *mtu)
 	mtu->g.ep0->maxpacket = maxpkt;
 	mtu->ep0_state = MU3D_EP0_STATE_SETUP;
 
+	if (udev_speed >= MTU3_SPEED_SUPER)
+		ssusb_phy_dp_pullup(mtu->ssusb);
+
 	if (udev_speed == USB_SPEED_UNKNOWN) {
 		mtu3_gadget_disconnect(mtu);
 		#if !IS_ENABLED(CONFIG_USB_MTU3_PLAT_PHONE)
@@ -914,6 +930,14 @@ void mtu3_start(struct mtu3 *mtu)
 	if (mtu->max_speed == USB_SPEED_FULL)
 		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
 	mtu3_regs_init(mtu);
+
+	#ifdef CONFIG_LGE_USB
+	if(get_meta_com_type() == META_USB_COM) {
+		mtu->max_speed	= USB_SPEED_FULL;
+		mtu3_setbits(mbase, U3D_SSUSB_U3_CTRL_0P, (SSUSB_U3_PORT_PDN|SSUSB_U3_PORT_DIS));
+		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
+	}
+	#endif
 	/* Initialize the default interrupts */
 	mtu3_intr_enable(mtu);
 	mtu->is_active = 1;

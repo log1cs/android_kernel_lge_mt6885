@@ -377,6 +377,22 @@ static int usb_parse_endpoint(struct device *ddev, int cfgno,
 		endpoint->desc.bInterval = n;
 	}
 
+	if (usb_endpoint_is_isoc_out(d)) {
+		struct usb_device *udev = to_usb_device(ddev);
+		int vendor_id = le16_to_cpu(udev->descriptor.idVendor);
+		int product_id = le16_to_cpu(udev->descriptor.idProduct);
+
+		if (vendor_id == 0x04e8 && product_id == 0xa04c &&
+			d->bInterval == 2) {
+			dev_warn(ddev, "config %d interface %d altsetting %d "
+				"endpoint 0x%X has an invalid bInterval %d, "
+				"changing to 3\n",
+			cfgno, inum, asnum,
+			d->bEndpointAddress, d->bInterval);
+			endpoint->desc.bInterval = 3;
+		}
+	}
+
 	/* Some buggy low-speed devices have Bulk endpoints, which is
 	 * explicitly forbidden by the USB spec.  In an attempt to make
 	 * them usable, we will try treating them as Interrupt endpoints.

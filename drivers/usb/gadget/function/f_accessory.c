@@ -140,12 +140,46 @@ static struct usb_interface_descriptor acc_interface_desc = {
 	.bInterfaceProtocol     = 0,
 };
 
+static struct usb_endpoint_descriptor acc_superspeed_in_desc = {
+	.bLength                = USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType        = USB_DT_ENDPOINT,
+	.bEndpointAddress       = USB_DIR_IN,
+	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
+	.wMaxPacketSize         = cpu_to_le16(1024),
+};
+
+static struct usb_ss_ep_comp_descriptor acc_superspeed_in_comp_desc = {
+	.bLength =		sizeof(acc_superspeed_in_comp_desc),
+	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
+
+	/* the following 2 values can be tweaked if necessary */
+	/* .bMaxBurst =		0, */
+	/* .bmAttributes =	0, */
+};
+
+static struct usb_endpoint_descriptor acc_superspeed_out_desc = {
+	.bLength                = USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType        = USB_DT_ENDPOINT,
+	.bEndpointAddress       = USB_DIR_OUT,
+	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
+	.wMaxPacketSize         = cpu_to_le16(1024),
+};
+
+static struct usb_ss_ep_comp_descriptor acc_superspeed_out_comp_desc = {
+	.bLength =		sizeof(acc_superspeed_out_comp_desc),
+	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
+
+	/* the following 2 values can be tweaked if necessary */
+	/* .bMaxBurst =		0, */
+	/* .bmAttributes =	0, */
+};
+
 static struct usb_endpoint_descriptor acc_highspeed_in_desc = {
 	.bLength                = USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType        = USB_DT_ENDPOINT,
 	.bEndpointAddress       = USB_DIR_IN,
 	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize         = __constant_cpu_to_le16(512),
+	.wMaxPacketSize         = cpu_to_le16(512),
 };
 
 static struct usb_endpoint_descriptor acc_highspeed_out_desc = {
@@ -153,7 +187,7 @@ static struct usb_endpoint_descriptor acc_highspeed_out_desc = {
 	.bDescriptorType        = USB_DT_ENDPOINT,
 	.bEndpointAddress       = USB_DIR_OUT,
 	.bmAttributes           = USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize         = __constant_cpu_to_le16(512),
+	.wMaxPacketSize         = cpu_to_le16(512),
 };
 
 static struct usb_endpoint_descriptor acc_fullspeed_in_desc = {
@@ -181,6 +215,15 @@ static struct usb_descriptor_header *hs_acc_descs[] = {
 	(struct usb_descriptor_header *) &acc_interface_desc,
 	(struct usb_descriptor_header *) &acc_highspeed_in_desc,
 	(struct usb_descriptor_header *) &acc_highspeed_out_desc,
+	NULL,
+};
+
+static struct usb_descriptor_header *ss_acc_descs[] = {
+	(struct usb_descriptor_header *) &acc_interface_desc,
+	(struct usb_descriptor_header *) &acc_superspeed_in_desc,
+	(struct usb_descriptor_header *) &acc_superspeed_in_comp_desc,
+	(struct usb_descriptor_header *) &acc_superspeed_out_desc,
+	(struct usb_descriptor_header *) &acc_superspeed_out_comp_desc,
 	NULL,
 };
 
@@ -848,6 +891,13 @@ int acc_ctrlrequest(struct usb_composite_dev *cdev,
 			w_value, w_index, w_length);
 */
 
+#ifdef CONFIG_LGE_USB_GADGET
+	if (!dev) {
+		value = -ENODEV;
+		goto err;
+	}
+#endif
+
 	if (b_requestType == (USB_DIR_OUT | USB_TYPE_VENDOR)) {
 		if (b_request == ACCESSORY_START) {
 			dev->start_requested = 1;
@@ -906,14 +956,16 @@ int acc_ctrlrequest(struct usb_composite_dev *cdev,
 			value = sizeof(u16);
 			cdev->req->complete = acc_complete_setup_noop;
 			/* clear any string left over from a previous session */
-			memset(dev->manufacturer, 0, sizeof(dev->manufacturer));
-			memset(dev->model, 0, sizeof(dev->model));
-			memset(dev->description, 0, sizeof(dev->description));
-			memset(dev->version, 0, sizeof(dev->version));
-			memset(dev->uri, 0, sizeof(dev->uri));
-			memset(dev->serial, 0, sizeof(dev->serial));
-			dev->start_requested = 0;
-			dev->audio_mode = 0;
+			if (dev) {
+				memset(dev->manufacturer, 0, sizeof(dev->manufacturer));
+				memset(dev->model, 0, sizeof(dev->model));
+				memset(dev->description, 0, sizeof(dev->description));
+				memset(dev->version, 0, sizeof(dev->version));
+				memset(dev->uri, 0, sizeof(dev->uri));
+				memset(dev->serial, 0, sizeof(dev->serial));
+				dev->start_requested = 0;
+				dev->audio_mode = 0;
+			}
 		}
 	}
 
@@ -981,6 +1033,14 @@ __acc_function_bind(struct usb_configuration *c,
 		acc_highspeed_in_desc.bEndpointAddress =
 			acc_fullspeed_in_desc.bEndpointAddress;
 		acc_highspeed_out_desc.bEndpointAddress =
+			acc_fullspeed_out_desc.bEndpointAddress;
+	}
+
+	/* support super speed hardware */
+	if (gadget_is_superspeed(c->cdev->gadget)) {
+		acc_superspeed_in_desc.bEndpointAddress =
+			acc_fullspeed_in_desc.bEndpointAddress;
+		acc_superspeed_out_desc.bEndpointAddress =
 			acc_fullspeed_out_desc.bEndpointAddress;
 	}
 
@@ -1347,6 +1407,7 @@ static struct usb_function *acc_alloc(struct usb_function_instance *fi)
 	dev->function.strings = acc_strings,
 	dev->function.fs_descriptors = fs_acc_descs;
 	dev->function.hs_descriptors = hs_acc_descs;
+	dev->function.ss_descriptors = ss_acc_descs;
 	dev->function.bind = acc_function_bind_configfs;
 	dev->function.unbind = acc_function_unbind;
 	dev->function.set_alt = acc_function_set_alt;

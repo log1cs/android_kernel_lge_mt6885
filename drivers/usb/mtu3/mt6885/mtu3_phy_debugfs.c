@@ -14,7 +14,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/debugfs.h>
+#include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/phy/phy.h>
@@ -103,14 +103,66 @@
 #define VAL_MAX_WDITH_5		0x1f
 #define VAL_0_WIDTH_5		0x0
 #define VAL_1_WIDTH_5		0x1
+#define VAL_2_WIDTH_5		0x2
+#define VAL_3_WIDTH_5		0x3
+#define VAL_4_WIDTH_5		0x4
+#define VAL_5_WIDTH_5		0x5
+#define VAL_6_WIDTH_5		0x6
+#define VAL_7_WIDTH_5		0x7
+#define VAL_8_WIDTH_5		0x8
+#define VAL_9_WIDTH_5		0x9
+#define VAL_10_WIDTH_5		0x0a
+#define VAL_11_WIDTH_5		0x0b
+#define VAL_12_WIDTH_5		0x0c
+#define VAL_13_WIDTH_5		0x0d
+#define VAL_14_WIDTH_5		0x0e
+#define VAL_15_WIDTH_5		0x0f
+#define VAL_16_WIDTH_5		0x10
+#define VAL_17_WIDTH_5		0x11
 #define VAL_18_WIDTH_5		0x12
+#define VAL_19_WIDTH_5		0x13
 #define VAL_20_WIDTH_5		0x14
+#define VAL_21_WIDTH_5		0x15
+#define VAL_22_WIDTH_5		0x16
+#define VAL_23_WIDTH_5		0x17
+#define VAL_24_WIDTH_5		0x18
+#define VAL_25_WIDTH_5		0x19
+#define VAL_26_WIDTH_5		0x1a
+#define VAL_27_WIDTH_5		0x1b
+#define VAL_28_WIDTH_5		0x1c
+#define VAL_29_WIDTH_5		0x1d
 #define VAL_30_WIDTH_5		0x1e
 #define VAL_31_WIDTH_5		0x1f
 #define STRNG_0_WIDTH_5		"00000"
 #define STRNG_1_WIDTH_5		"00001"
+#define STRNG_2_WIDTH_5		"00010"
+#define STRNG_3_WIDTH_5		"00011"
+#define STRNG_4_WIDTH_5		"00100"
+#define STRNG_5_WIDTH_5		"00101"
+#define STRNG_6_WIDTH_5		"00110"
+#define STRNG_7_WIDTH_5		"00111"
+#define STRNG_8_WIDTH_5		"01000"
+#define STRNG_9_WIDTH_5		"01001"
+#define STRNG_10_WIDTH_5	"01010"
+#define STRNG_11_WIDTH_5	"01011"
+#define STRNG_12_WIDTH_5	"01100"
+#define STRNG_13_WIDTH_5	"01101"
+#define STRNG_14_WIDTH_5	"01110"
+#define STRNG_15_WIDTH_5	"01111"
+#define STRNG_16_WIDTH_5	"10000"
+#define STRNG_17_WIDTH_5	"10001"
 #define STRNG_18_WIDTH_5	"10010"
+#define STRNG_19_WIDTH_5	"10011"
 #define STRNG_20_WIDTH_5	"10100"
+#define STRNG_21_WIDTH_5	"10101"
+#define STRNG_22_WIDTH_5	"10110"
+#define STRNG_23_WIDTH_5	"10111"
+#define STRNG_24_WIDTH_5	"11000"
+#define STRNG_25_WIDTH_5	"11001"
+#define STRNG_26_WIDTH_5	"11010"
+#define STRNG_27_WIDTH_5	"11011"
+#define STRNG_28_WIDTH_5	"11100"
+#define STRNG_29_WIDTH_5	"11101"
 #define STRNG_30_WIDTH_5	"11110"
 #define STRNG_31_WIDTH_5	"11111"
 
@@ -154,7 +206,20 @@
 
 #define FILE_REG_DEBUG "phy_reg"
 
-static struct dentry *usb20_phy_debugfs_root;
+#define FILE_RG_SSUSB_IDRVSEL "RG_SSUSB_IDRVSEL"
+#define MSK_RG_SSUSB_IDRVSEL MSK_WIDTH_5
+#define SHFT_RG_SSUSB_IDRVSEL 15
+#define OFFSET_RG_SSUSB_IDRVSEL 0x6E8
+#define SHFT_RG_SSUSB_FORCE_IDRVSEL 14
+
+#define FILE_RG_SSUSB_IDEMSEL "RG_SSUSB_IDEMSEL"
+#define MSK_RG_SSUSB_IDEMSEL MSK_WIDTH_5
+#define SHFT_RG_SSUSB_IDEMSEL 21
+#define OFFSET_RG_SSUSB_IDEMSEL 0x6E8
+#define SHFT_RG_SSUSB_FORCE_IDEMSEL 20
+
+struct proc_dir_entry *mtk_usb_proc_root=NULL;
+static struct proc_dir_entry *usb20_phy_procfs_root;
 static u32 ippc_value, ippc_addr;
 
 static void u3phywrite32(struct phy *phy, int offset, int mask, int value)
@@ -184,6 +249,14 @@ static void usb20_phy_debugfs_write_width1(struct phy *phy, u8 offset, u8 shift,
 
 	u3phywrite32(phy, offset, MSK_WIDTH_1 << shift, set_val << shift);
 
+}
+
+static void usb20_phy_debugfs_write_width1_wide_set(struct phy *phy, int offset, u8 shift)
+{
+	u32 set_val = 0;
+
+	set_val = VAL_1_WIDTH_1;
+	u3phywrite32(phy, offset, MSK_WIDTH_1 << shift, set_val << shift);
 }
 
 static void usb20_phy_debugfs_rev6_write(struct phy *phy, u8 offset, u8 shift,
@@ -341,6 +414,114 @@ static void usb20_phy_debugfs_write_width5(struct phy *phy, u8 offset, u8 shift,
 
 }
 
+static void usb20_phy_debugfs_write_width5_wide(struct phy *phy, int offset, u8 shift,
+	char *buf)
+{
+	u32 set_val = 0;
+
+	pr_info("s(%s)\n", buf);
+	if (!strncmp(buf, STRNG_0_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_0_WIDTH_5);
+		set_val = VAL_0_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_1_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_1_WIDTH_5);
+		set_val = VAL_1_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_2_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_2_WIDTH_5);
+		set_val = VAL_2_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_3_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_3_WIDTH_5);
+		set_val = VAL_3_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_4_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_4_WIDTH_5);
+		set_val = VAL_4_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_5_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_5_WIDTH_5);
+		set_val = VAL_5_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_6_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_6_WIDTH_5);
+		set_val = VAL_6_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_7_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_7_WIDTH_5);
+		set_val = VAL_7_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_8_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_8_WIDTH_5);
+		set_val = VAL_8_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_9_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_9_WIDTH_5);
+		set_val = VAL_9_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_10_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_10_WIDTH_5);
+		set_val = VAL_10_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_11_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_11_WIDTH_5);
+		set_val = VAL_11_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_12_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_12_WIDTH_5);
+		set_val = VAL_12_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_13_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_13_WIDTH_5);
+		set_val = VAL_13_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_14_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_14_WIDTH_5);
+		set_val = VAL_14_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_15_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_15_WIDTH_5);
+		set_val = VAL_15_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_16_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_16_WIDTH_5);
+		set_val = VAL_16_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_17_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_17_WIDTH_5);
+		set_val = VAL_17_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_18_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_18_WIDTH_5);
+		set_val = VAL_18_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_19_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_19_WIDTH_5);
+		set_val = VAL_19_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_20_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_20_WIDTH_5);
+		set_val = VAL_20_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_21_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_21_WIDTH_5);
+		set_val = VAL_21_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_22_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_22_WIDTH_5);
+		set_val = VAL_22_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_23_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_23_WIDTH_5);
+		set_val = VAL_23_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_24_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_24_WIDTH_5);
+		set_val = VAL_24_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_25_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_25_WIDTH_5);
+		set_val = VAL_25_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_26_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_26_WIDTH_5);
+		set_val = VAL_26_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_27_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_27_WIDTH_5);
+		set_val = VAL_27_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_28_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_28_WIDTH_5);
+		set_val = VAL_28_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_29_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_29_WIDTH_5);
+		set_val = VAL_29_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_30_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_30_WIDTH_5);
+		set_val = VAL_30_WIDTH_5;
+	} else if (!strncmp(buf, STRNG_31_WIDTH_5, BIT_WIDTH_5)) {
+		pr_debug("%s case\n", STRNG_31_WIDTH_5);
+		set_val = VAL_31_WIDTH_5;
+	} else
+		return;
+
+	u3phywrite32(phy, offset, MSK_WIDTH_5 << shift, set_val << shift);
+
+}
 
 static u8 usb20_phy_debugfs_read_val(u32 val, u8 width, char *str)
 {
@@ -555,49 +736,89 @@ static int phy_rw_show(struct seq_file *s, void *unused)
 	return 0;
 }
 
+static int rg_ssusb_idrvsel_show(struct seq_file *s, void *unused)
+{
+	struct phy *phy = s->private;
+	u32 val;
+	char str[16];
+
+	val = usb_mtkphy_io_read(phy, (OFFSET_RG_SSUSB_IDRVSEL));
+	val = val >> SHFT_RG_SSUSB_IDRVSEL;
+	val = val & MSK_RG_SSUSB_IDRVSEL;
+	val = usb20_phy_debugfs_read_val(val, BIT_WIDTH_5, str);
+
+	seq_printf(s, "%s = %s\n", FILE_RG_SSUSB_IDRVSEL, str);
+	return 0;
+}
+
+static int rg_ssusb_idemsel_show(struct seq_file *s, void *unused)
+{
+	struct phy *phy = s->private;
+	u32 val;
+	char str[16];
+
+	val = usb_mtkphy_io_read(phy, (OFFSET_RG_SSUSB_IDEMSEL));
+	val = val >> SHFT_RG_SSUSB_IDEMSEL;
+	val = val & MSK_RG_SSUSB_IDEMSEL;
+	val = usb20_phy_debugfs_read_val(val, BIT_WIDTH_5, str);
+
+	seq_printf(s, "%s = %s\n", FILE_RG_SSUSB_IDEMSEL, str);
+	return 0;
+}
+
 static int usb_driving_capability_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, usb_driving_capability_show, inode->i_private);
+	return single_open(file, usb_driving_capability_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_term_vref_sel_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_term_vref_sel_show, inode->i_private);
+	return single_open(file, rg_usb20_term_vref_sel_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_hstx_srctrl_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_hstx_srctrl_show, inode->i_private);
+	return single_open(file, rg_usb20_hstx_srctrl_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_vrt_vref_sel_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_vrt_vref_sel_show, inode->i_private);
+	return single_open(file, rg_usb20_vrt_vref_sel_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_intr_en_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_intr_en_show, inode->i_private);
+	return single_open(file, rg_usb20_intr_en_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_rev6_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_rev6_show, inode->i_private);
+	return single_open(file, rg_usb20_rev6_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_intr_cal_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_intr_cal_show, inode->i_private);
+	return single_open(file, rg_usb20_intr_cal_show, PDE_DATA(inode));
 }
 
 static int rg_usb20_discth_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rg_usb20_discth_show, inode->i_private);
+	return single_open(file, rg_usb20_discth_show, PDE_DATA(inode));
 }
 
 static int phy_rw_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, phy_rw_show, inode->i_private);
+	return single_open(file, phy_rw_show, PDE_DATA(inode));
+}
+
+static int rg_ssusb_idrvsel_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, rg_ssusb_idrvsel_show, PDE_DATA(inode));
+}
+
+static int rg_ssusb_idemsel_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, rg_ssusb_idemsel_show, PDE_DATA(inode));
 }
 
 void val_to_bstring_width3(u8 val, char *str)
@@ -826,7 +1047,42 @@ static ssize_t phy_rw_write(struct file *file,
 	return count;
 }
 
+static ssize_t rg_ssusb_idrvsel_write(struct file *file,
+	const char __user *ubuf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = file->private_data;
+	struct phy *phy = s->private;
+	char buf[18];
 
+	memset(buf, 0x00, sizeof(buf));
+
+	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+		return -EFAULT;
+	usb20_phy_debugfs_write_width5_wide(phy, OFFSET_RG_SSUSB_IDRVSEL,
+		SHFT_RG_SSUSB_IDRVSEL, buf);
+	usb20_phy_debugfs_write_width1_wide_set(phy, OFFSET_RG_SSUSB_IDRVSEL,
+		SHFT_RG_SSUSB_FORCE_IDRVSEL);
+
+	return count;
+}
+
+static ssize_t rg_ssusb_idemsel_write(struct file *file,
+	const char __user *ubuf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = file->private_data;
+	struct phy *phy = s->private;
+	char buf[18];
+
+	memset(buf, 0x00, sizeof(buf));
+
+	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+		return -EFAULT;
+	usb20_phy_debugfs_write_width5_wide(phy, OFFSET_RG_SSUSB_IDEMSEL,
+		SHFT_RG_SSUSB_IDEMSEL, buf);
+	usb20_phy_debugfs_write_width1_wide_set(phy, OFFSET_RG_SSUSB_IDRVSEL,
+		SHFT_RG_SSUSB_FORCE_IDEMSEL);
+	return count;
+}
 
 static const struct file_operations usb_driving_capability_fops = {
 	.open = usb_driving_capability_open,
@@ -900,78 +1156,112 @@ static const struct file_operations phy_rw_fops = {
 	.release = single_release,
 };
 
+static const struct file_operations rg_ssusb_idrvsel_fops = {
+	.open = rg_ssusb_idrvsel_open,
+	.write = rg_ssusb_idrvsel_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static const struct file_operations rg_ssusb_idemsel_fops = {
+	.open = rg_ssusb_idemsel_open,
+	.write = rg_ssusb_idemsel_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 int mtu3_phy_init_debugfs(struct phy *phy)
 {
-	struct dentry *root;
-	struct dentry *file;
+	struct proc_dir_entry *root;
+	struct proc_dir_entry *file;
 	int ret;
 
-	root = debugfs_create_dir("usb20_phy", NULL);
+	if(!mtk_usb_proc_root) {
+		mtk_usb_proc_root = proc_mkdir("mtk_usb", NULL);
+	}
+
+	root = proc_mkdir("mtk_usb/usb20_phy", NULL);
 	if (!root) {
 		ret = -ENOMEM;
 		goto err0;
 	}
 
-	file = debugfs_create_file(FILE_USB_DRIVING_CAPABILITY, 0644,
-				   root, phy, &usb_driving_capability_fops);
+	file = proc_create_data(FILE_USB_DRIVING_CAPABILITY, 0644,
+				   root, &usb_driving_capability_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_TERM_VREF_SEL, 0644,
-				   root, phy, &rg_usb20_term_vref_sel_fops);
+	file = proc_create_data(FILE_RG_USB20_TERM_VREF_SEL, 0644,
+				   root, &rg_usb20_term_vref_sel_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_HSTX_SRCTRL, 0644,
-				   root, phy, &rg_usb20_hstx_srctrl_fops);
+	file = proc_create_data(FILE_RG_USB20_HSTX_SRCTRL, 0644,
+				   root, &rg_usb20_hstx_srctrl_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_VRT_VREF_SEL, 0644,
-				   root, phy, &rg_usb20_vrt_vref_sel_fops);
+	file = proc_create_data(FILE_RG_USB20_VRT_VREF_SEL, 0644,
+				   root, &rg_usb20_vrt_vref_sel_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_INTR_EN, 0644,
-				   root, phy, &rg_usb20_intr_en_fops);
+	file = proc_create_data(FILE_RG_USB20_INTR_EN, 0644,
+				   root, &rg_usb20_intr_en_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_PHY_REV6, 0644,
-				   root, phy, &rg_usb20_rev6_fops);
+	file = proc_create_data(FILE_RG_USB20_PHY_REV6, 0644,
+				   root, &rg_usb20_rev6_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_INTR_CAL, 0644,
-				   root, phy, &rg_usb20_intr_cal_fops);
+	file = proc_create_data(FILE_RG_USB20_INTR_CAL, 0644,
+				   root, &rg_usb20_intr_cal_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_RG_USB20_DISCTH, 0644,
-				   root, phy, &rg_usb20_discth_fops);
+	file = proc_create_data(FILE_RG_USB20_DISCTH, 0644,
+				   root, &rg_usb20_discth_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
-	file = debugfs_create_file(FILE_REG_DEBUG, 0644,
-				   root, phy, &phy_rw_fops);
+	file = proc_create_data(FILE_REG_DEBUG, 0644,
+				   root, &phy_rw_fops, phy);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
 
-	usb20_phy_debugfs_root = root;
+	file = proc_create_data(FILE_RG_SSUSB_IDRVSEL, 0644,
+				   root, &rg_ssusb_idrvsel_fops, phy);
+	if (!file) {
+		ret = -ENOMEM;
+		goto err1;
+	}
+
+	file = proc_create_data(FILE_RG_SSUSB_IDEMSEL, 0644,
+				   root, &rg_ssusb_idemsel_fops, phy);
+	if (!file) {
+		ret = -ENOMEM;
+		goto err1;
+	}
+
+	usb20_phy_procfs_root = root;
 	return 0;
 
 err1:
-	debugfs_remove_recursive(root);
+	proc_remove(root);
 
 err0:
 	return ret;
@@ -979,6 +1269,6 @@ err0:
 
 int mtu3_phy_exit_debugfs(void)
 {
-	debugfs_remove_recursive(usb20_phy_debugfs_root);
+	proc_remove(usb20_phy_procfs_root);
 	return 0;
 }
