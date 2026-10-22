@@ -49,6 +49,9 @@
 #define PMIC_ACCDET_DEBUG          1
 #define PMIC_ACCDET_SUPPORT
 
+/* Workaround for MIC pin open cable */
+#define CONFIG_WORKAROUND_OPEN_CABLE
+
 #define NO_KEY	(0x0)
 #define UP_KEY	(0x01)
 #define MD_KEY	(0x02)
