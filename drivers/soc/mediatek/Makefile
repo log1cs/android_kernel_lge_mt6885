@@ -10,3 +10,7 @@ obj-$(CONFIG_MTK_CMDQ_MBOX) += mtk-cmdq-helper.o
 obj-$(CONFIG_MTK_MBOX) += mtk-mbox.o
 obj-$(CONFIG_MTK_IPI) += mtk_tinysys_ipi.o
 obj-$(CONFIG_MTK_LPM) += mtk-lpm.o
+obj-$(CONFIG_MTK_SOCINFO) += mtk-socinfo.o
+
+obj-$(CONFIG_MACH_LGE) += lge/
+

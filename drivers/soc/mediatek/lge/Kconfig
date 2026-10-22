@@ -1,0 +1,94 @@
+config MACH_LGE
+	bool
+        default y
+
+menu "LGE Board Selection"
+
+config MACH_MT6885_CAYMAN
+	bool "MT6885 CAYMAN"
+	depends on MACH_MT6885
+	select MACH_LGE
+
+config MACH_MT6885_CAYMAN_LAO
+	bool "MT6885 CAYMAN LAO"
+	depends on MACH_MT6885
+	select MACH_MT6885_CAYMAN
+
+config MACH_MT6885_CAYMAN2
+	bool "MT6885 CAYMAN2"
+	depends on MACH_MT6885
+	select MACH_LGE
+
+config MACH_MT6885_CAYMAN2_KR
+	bool "MT6885 CAYMAN2 KR"
+	depends on MACH_MT6885
+	select MACH_MT6885_CAYMAN2
+
+config MACH_MT6885_CAYMAN2_LAO
+	bool "MT6885 CAYMAN2 LAO"
+	depends on MACH_MT6885
+	select MACH_MT6885_CAYMAN2
+
+config MACH_MT6885_CAYMAN2_LDU
+	bool "MT6885 CAYMAN2 LDU"
+	depends on MACH_MT6885
+	select MACH_MT6885_CAYMAN2
+
+config LGE_PM_PRM
+	tristate "Support LGE Power resource manager"
+	help
+	  LGE power resource manager
+
+endmenu
+
+config LGE_EARJACK_DEBUGGER
+	bool "Earjack UART debugger support"
+	default n
+	depends on MACH_LGE
+	help
+		Support earjack type UART debugger cable
+
+config LGE_PM
+	bool "LGE Power Feature"
+	default n
+	help
+		Say y here to support LGE Power Feature.
+		Power manangment, Battery Charging, Fuel Gauge, Thermal and ETC.
+
+config LGE_PM_DEBUG
+	bool "LGE Power Debug Feature"
+	default n
+	depends on LGE_PM
+	help
+		Say y here to support LGE Power Debug Log Feature.
+		LGE_PM_DEBUG is related with LGE_PM
+		Clock,GPIO,PMIC_regs dump log.
+
+config LGE_HALLIC
+	bool "Generic Hall IC Driver"
+	default n
+
+config LGE_BOOT_MODE
+	bool "Support Get Booting mode from cmdline"
+	depends on MACH_LGE
+	default n
+	help
+		This is get bootimg mode from cmdline. And that mode is
+		offers to any module by using lge_get_boot_mode API.
+
+config LGE_HANDLE_PANIC
+	bool "LG Kernel Crash Handler"
+	default n
+	help
+		Set LG Kernel Crash Handler
+
+config LGE_USB_SBU_SWITCH
+	bool "LGE USB Type-C CC/SBU Protection Switch driver"
+	help
+	  Say y if this must be needed.
+
+config LGE_DUAL_SCREEN
+        bool "Support Dual Screen"
+        depends on MACH_LGE
+        help
+          Say 'y" here to include support for dual screen.
