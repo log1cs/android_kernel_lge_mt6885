@@ -12,6 +12,7 @@
 #
 
 #$(call all-subdir-src-or-makefile)
+export MTK_PLATFORM_NAME := $(CONFIG_MTK_PLATFORM)
 export MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 subdir-ccflags-y += -Werror
 
@@ -81,12 +82,17 @@ obj-$(CONFIG_MTK_AUXADC)	+= auxadc/
 obj-$(CONFIG_MTK_GPT_SCHEME_SUPPORT)	+= partition/
 obj-$(CONFIG_MTK_PWM)	    += pwm/
 obj-$(CONFIG_MTK_IRTX_PWM_SUPPORT)	    += irtx/
+ifeq ($(CONFIG_MTK_SENSORHUB), y)
+obj-$(CONFIG_MTK_TINYSYS_SCP_SUPPORT) += scp/
+endif
 ifeq ($(subst ",,$(CONFIG_MTK_SENSOR_ARCHITECTURE)),1.0)
 obj-y += sensors-1.0/
 else
 obj-y += sensor/
 endif
+ifneq ($(CONFIG_MTK_SENSORHUB), y)
 obj-$(CONFIG_MTK_TINYSYS_SCP_SUPPORT) += scp/
+endif
 obj-$(CONFIG_MTK_HIFIXDSP_SUPPORT) += hifi_dsp/
 obj-$(CONFIG_MTK_HIFIXDSP_SUPPORT) += hifidsp_audio_ipi/
 obj-$(CONFIG_MTK_AUDIODSP_SUPPORT) += adsp/
@@ -169,6 +175,9 @@ obj-$(CONFIG_MTK_SPMTWAM) += twam/
 obj-$(CONFIG_MTK_LOW_POWER_MODULE) += lpm/
 obj-$(CONFIG_MTK_TASK_TURBO) += task_turbo/
 obj-$(CONFIG_MTK_UNIFIED_DEBUG_INTERFACE) += udi/
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/tc1_interface/),)
+obj-$(CONFIG_MTK_TC1_FEATURE)   += tc1_interface/
+endif
 obj-y += rps/
 obj-$(CONFIG_MTK_MDDP_SUPPORT) += mddp/
 obj-$(CONFIG_MTK_USB2JTAG_SUPPORT) += usb2jtag/
