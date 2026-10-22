@@ -100,8 +100,13 @@ void ufs_mtk_pltfrm_deepidle_lock(struct ufs_hba *hba, bool lock);
 int  ufs_mtk_pltfrm_ref_clk_ctrl(struct ufs_hba *hba, bool on);
 int  ufs_mtk_pltfrm_init(void);
 int  ufs_mtk_pltfrm_parse_dt(struct ufs_hba *hba);
+#ifdef CONFIG_LGE_UFS_PWR_MODE_CHANGE
+int  ufs_mtk_pltfrm_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op);
+int  ufs_mtk_pltfrm_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op);
+#else
 int  ufs_mtk_pltfrm_resume(struct ufs_hba *hba);
 int  ufs_mtk_pltfrm_suspend(struct ufs_hba *hba);
+#endif
 void ufs_mtk_pltfrm_gpio_trigger_and_debugInfo_dump(struct ufs_hba *hba);
 
 #ifdef MTK_UFS_HQA

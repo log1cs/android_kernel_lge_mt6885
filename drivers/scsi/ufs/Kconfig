@@ -166,3 +166,12 @@ config SCSI_UFS_CRYPTO
 	  Enabling this makes it possible for the kernel to use the crypto
 	  capabilities of the UFS device (if present) to perform crypto
 	  operations on data being transferred to/from the device.
+
+config LGE_UFS_PWR_MODE_CHANGE
+	bool "LGE UFS power mode change feature"
+	default n
+	help
+	  Say y here to support LGE UFS power mode change feature.
+	  LGE_UFS_PWR_MODE_CHANGE is related with LGE Specific.
+	  We try to change UFS VCCQ power mode with temperature condition.
+
