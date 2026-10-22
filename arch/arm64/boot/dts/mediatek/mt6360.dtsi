@@ -52,7 +52,11 @@
 			en_wdt = <1>;
 			en_otg_wdt = <1>;
 			aicc_once = <1>;
+			#ifdef CONFIG_LGE_PM
+			post_aicc = <0>;
+#else
 			post_aicc = <1>;
+#endif
 			batoc_notify = <0>;
 			charger = <&mt6360_chg>;
 			bc12_sel = <0>;
