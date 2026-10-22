@@ -33,9 +33,34 @@
 #include <mt-plat/mtk_meminfo.h>
 #include <mt-plat/mtk_ccci_common.h>
 #include <mt-plat/mtk_boot_common.h>
+
+#ifdef CONFIG_MACH_LGE
+#include <soc/mediatek/lge/board_lge.h>
+#endif
+
 #if defined(ENABLE_32K_CLK_LESS)
 #include <mt-plat/mtk_rtc.h>
 #endif
+
+#if defined(CONFIG_LGE_BOOT_MODE)
+#include <soc/mediatek/lge/lge_boot_mode.h>
+#define FEATURE_TC1_CUSTOMER_VAL
+#endif
+#ifdef CONFIG_MTK_TC1_FEATURE
+#include "../tc1_interface/lg_partition.h"
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+
+unsigned char g_lge_mcc[4] = "";
+unsigned char g_lge_mnc[4] = "";
+unsigned char g_lge_subset[4] = "";
+
+EXPORT_SYMBOL(g_lge_mcc);
+EXPORT_SYMBOL(g_lge_mnc);
+EXPORT_SYMBOL(g_lge_subset);
+#endif
+extern char g_lge_sim_num[4];
+extern char g_lge_sku_carrier[16];
 
 #define TAG "md"
 
@@ -51,11 +76,40 @@ static atomic_t md1_md3_smem_clear = ATOMIC_INIT(0);
 #define CCB_CACHE_MIN_SIZE    (2 * 1024 * 1024)
 static const char *s_smem_user_names[SMEM_USER_MAX];
 
+#define MD_SMEM_FLAG_NORMAL    0
+#define MD_SMEM_FLAG_PADDING   1
+#define MD_SMEM_FLAG_OVERLAP   2
+
+#define MD_SMEM_FLAG_SIZE_ZERO 1000
+#define MD_SMEM_FLAG_LAST_REGION 1001
+
+#define MD_SMEM_BUF_SIZE 1024
+static char g_md_smem_buf[MD_SMEM_BUF_SIZE];
+static unsigned int g_md_smem_pos;
+
+#define STR_SIZE 100
+
+int ccci_get_md_smem_buf(char **pbuf, unsigned int *size)
+{
+	if ((!pbuf) || (!(*pbuf)) || (!size))
+		return -1;
+
+	*pbuf = g_md_smem_buf;
+	*size = g_md_smem_pos;
+
+	return 0;
+}
+
+
 #ifdef CCCI_USE_DFD_OFFSET_0
 struct ccci_smem_region md1_6297_noncacheable_fat[] = {
 		{SMEM_USER_RAW_DFD,	        0,	0,		 0, },
 		{SMEM_USER_RAW_UDC_DATA,	0,	0,		 0, },
 		{SMEM_USER_MD_WIFI_PROXY,	0,	0,		 0,},
+#ifdef ENABLE_SECURITY_SHARE_MEMORY
+		{SMEM_USER_SECURITY_SMEM,	0,	0,
+			SMF_NCLR_FIRST, },
+#endif
 		{SMEM_USER_RAW_AMMS_POS,	0,	0,
 			SMF_NCLR_FIRST, },
 
@@ -287,6 +341,9 @@ static void init_smem_user_name(void)
 	s_smem_user_names[SMEM_USER_MD_WIFI_PROXY] = "MD_WIFI_PROXY";
 	s_smem_user_names[SMEM_USER_MD_NVRAM_CACHE] = "MD_NVRAM_CACHE";
 	s_smem_user_names[SMEM_USER_LOW_POWER] = "LOW_POWER";
+#ifdef ENABLE_SECURITY_SHARE_MEMORY
+	s_smem_user_names[SMEM_USER_SECURITY_SMEM] = "SECURITY_SMEM";
+#endif
 }
 
 
@@ -318,6 +375,156 @@ static struct ccci_smem_region *get_smem_by_user_id(
 	return NULL;
 }
 
+static void append_string_to_md_smem_buf(const char *str)
+{
+	int n;
+
+	if (g_md_smem_pos >= (MD_SMEM_BUF_SIZE - 1))
+		return;
+
+	n = snprintf(g_md_smem_buf + g_md_smem_pos,
+				 MD_SMEM_BUF_SIZE - g_md_smem_pos,
+				 "%s", str);
+
+	if (n <= 0) {
+		CCCI_ERROR_LOG(-1, TAG,
+			"[%s] warning: snprintf() fail: %d\n",
+			__func__, n);
+		return;
+	}
+
+	if (n >= (MD_SMEM_BUF_SIZE - g_md_smem_pos)) {
+		CCCI_ERROR_LOG(-1, TAG,
+		"[%s] warning: g_md_smem_buf is too small: %u,%d\n",
+		__func__, g_md_smem_pos, n);
+
+		g_md_smem_pos = MD_SMEM_BUF_SIZE - 1;
+
+	} else
+		g_md_smem_pos += n;
+
+	g_md_smem_buf[g_md_smem_pos] = '\0';
+}
+
+static void calc_smem_overlap_and_padding(
+		struct ccci_smem_region *regions,
+		int flag, int index, int *overlap_index)
+{
+	int i = 0, n = 0;
+	char str[STR_SIZE] = {0};
+
+	CCCI_BOOTUP_LOG(-1, TAG,
+		"[%s] flag: %d; index: %d; overlap_index: %d\n",
+		__func__, flag, index, (*overlap_index));
+
+	if ((flag != MD_SMEM_FLAG_SIZE_ZERO) &&
+			((*overlap_index) != -1)) {  //overlap
+		int s = 0, c = 0;
+		unsigned int overlap_off = 0, overlap_size = 0;
+		char lap[STR_SIZE] = {0};
+
+		i = (*overlap_index);
+
+		while (i < index) {
+			if (regions[i].size == 0) {
+				i++;
+				continue;
+			}
+
+			if ((regions[i].offset < overlap_off) ||
+					(overlap_off == 0))
+				overlap_off = regions[i].offset;
+
+			if ((regions[i].offset + regions[i].size)
+					- overlap_off > overlap_size)
+				overlap_size =
+					(regions[i].offset + regions[i].size)
+					- overlap_off;
+
+			if (i == (*overlap_index))
+				n = snprintf(lap + s, STR_SIZE - s,
+						"%d", regions[i].id);
+			else
+				n = snprintf(lap + s, STR_SIZE - s,
+						"|%d", regions[i].id);
+
+			if (n >= (STR_SIZE - s))
+				CCCI_ERROR_LOG(-1, TAG,
+					"[%s] warning: buf size too small: %d,%d\n",
+					__func__, s, n);
+
+			else if (n < 0) {
+				CCCI_ERROR_LOG(-1, TAG,
+					"[%s] warning: snprintf() fail: %d,%d\n",
+					__func__, s, n);
+				break;
+			}
+
+			s += n;
+			c++;
+			i++;
+
+			if (s >= STR_SIZE)
+				break;
+		}
+
+		if (c > 1) {
+			n = snprintf(str, STR_SIZE, "%d-%s-%X|%X\n",
+					MD_SMEM_FLAG_OVERLAP,
+					lap, overlap_off, overlap_size);
+
+			if (n >= STR_SIZE)
+				CCCI_ERROR_LOG(-1, TAG,
+					"[%s] warning: str buf size too small, %d\n",
+					__func__, n);
+
+			if (n > 0)
+				append_string_to_md_smem_buf(str);
+		}
+
+		*overlap_index = -1;
+	}
+
+	if (flag == MD_SMEM_FLAG_SIZE_ZERO)
+		flag = MD_SMEM_FLAG_NORMAL;
+
+	if (flag == MD_SMEM_FLAG_NORMAL ||
+			flag == MD_SMEM_FLAG_PADDING) {  //normal and padding
+
+		if (flag == MD_SMEM_FLAG_PADDING) {
+			int pad_off = regions[index-1].offset
+						+ regions[index-1].size;
+
+			n = snprintf(str, STR_SIZE, "%d-%d-%X|%X\n", flag,
+					regions[index].id,
+					pad_off,
+					regions[index].offset - pad_off);
+
+			if (n >= STR_SIZE)
+				CCCI_ERROR_LOG(-1, TAG,
+					"[%s] warning: str buf size too small, %d\n",
+					__func__, n);
+
+			if (n > 0)
+				append_string_to_md_smem_buf(str);
+
+			flag = MD_SMEM_FLAG_NORMAL;
+		}
+
+		n = snprintf(str, STR_SIZE, "%d-%d-%X|%X\n", flag,
+				regions[index].id,
+				regions[index].offset, regions[index].size);
+
+		if (n >= STR_SIZE)
+			CCCI_ERROR_LOG(-1, TAG,
+				"[%s] warning: str buf size too small, %d\n",
+				__func__, n);
+
+		if (n > 0)
+			append_string_to_md_smem_buf(str);
+	}
+}
+
 static void init_smem_regions(struct ccci_smem_region *regions,
 	phys_addr_t base_ap_view_phy,
 	void __iomem *base_ap_view_vir,
@@ -325,6 +532,7 @@ static void init_smem_regions(struct ccci_smem_region *regions,
 {
 	int i;
 	int calc_offset = 0;
+	int overlap_index = -1;
 
 	for (i = 0; ; i++) {
 		if (!regions || regions[i].id == SMEM_USER_MAX)
@@ -341,25 +549,52 @@ static void init_smem_regions(struct ccci_smem_region *regions,
 		regions[i].base_md_view_phy =
 			base_md_view_phy + regions[i].offset;
 
-		if (calc_offset != regions[i].offset) {
-			if ((i > 0) &&
-				(regions[i-1].offset == regions[i].offset))
-				CCCI_BOOTUP_LOG(-1, TAG,
-					"[%s] (%s) and (%s) is overlap.\n",
-					__func__,
-					get_smem_user_name(regions[i-1].id),
-					get_smem_user_name(regions[i].id));
-			else
+		if ((i > 0) && (regions[i].size != 0) &&
+				(calc_offset != regions[i].offset)) {
+
+			if (regions[i].offset > calc_offset) { // padding
 				CCCI_BOOTUP_LOG(-1, TAG,
 					"[%s] <%d>(%s) padding size: %x\n",
 					__func__, regions[i].id,
 					get_smem_user_name(regions[i].id),
 					regions[i].offset - calc_offset);
 
-			calc_offset = regions[i].offset + regions[i].size;
+				calc_smem_overlap_and_padding(regions,
+					MD_SMEM_FLAG_PADDING, i,
+					&overlap_index);
 
-		} else
-			calc_offset += regions[i].size;
+				calc_offset = regions[i].offset + regions[i].size;
+
+			} else {  //overlap
+				CCCI_BOOTUP_LOG(-1, TAG,
+					"[%s] (%s) and (%s) is overlap.\n",
+					__func__,
+					get_smem_user_name(regions[i-1].id),
+					get_smem_user_name(regions[i].id));
+
+				if (overlap_index == -1)
+					overlap_index = i-1;
+
+				if ((regions[i].offset + regions[i].size) >
+						calc_offset)  //range is larger than before
+					calc_offset = regions[i].offset +
+							regions[i].size;
+			}
+
+		} else {
+			if (regions[i].size != 0) {  //normal region
+				calc_offset = regions[i].offset + regions[i].size;
+
+				calc_smem_overlap_and_padding(regions,
+					MD_SMEM_FLAG_NORMAL, i,
+					&overlap_index);
+
+			} else  // region size is 0
+				calc_smem_overlap_and_padding(regions,
+					MD_SMEM_FLAG_SIZE_ZERO, i,
+					&overlap_index);
+
+		}
 
 		CCCI_BOOTUP_LOG(-1, TAG,
 			"%s: reg[%d](%s)<%d>(%lx %lx %lx)[%x]\n", __func__,
@@ -369,6 +604,10 @@ static void init_smem_regions(struct ccci_smem_region *regions,
 			(unsigned long)regions[i].base_md_view_phy,
 			regions[i].size);
 	}
+
+	calc_smem_overlap_and_padding(regions,
+			MD_SMEM_FLAG_LAST_REGION, i,
+			&overlap_index);
 }
 
 static void clear_smem_region(struct ccci_smem_region *regions, int first_boot)
@@ -828,10 +1067,6 @@ void ccci_md_config(struct ccci_modem *md)
 	md->mem_layout.md_bank0.base_ap_view_phy = md_resv_mem_addr;
 	md->mem_layout.md_bank0.size = md_resv_mem_size;
 	/* do not remap whole region, consume too much vmalloc space */
-	md->mem_layout.md_bank0.base_ap_view_vir =
-		ccci_map_phy_addr(
-			md->mem_layout.md_bank0.base_ap_view_phy,
-			MD_IMG_DUMP_SIZE);
 	/* Share memory */
 	/*
 	 * MD bank4 is remap to nearest 32M aligned address
@@ -904,7 +1139,7 @@ void ccci_md_config(struct ccci_modem *md)
 #if (MD_GENERATION >= 6293)
 	if (md->index == MD_SYS1) {
 		md->mem_layout.md_bank4_cacheable_total.base_md_view_phy =
-			0x40000000 + (224 * 1024 * 1024) +
+			0x40000000 + get_md_smem_cachable_offset(MD_SYS1) +
 			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
 			- round_down(
 			md->mem_layout.md_bank4_cacheable_total.base_ap_view_phy
@@ -1148,8 +1383,12 @@ int ccci_md_register(struct ccci_modem *md)
 
 int ccci_md_set_boot_data(unsigned char md_id, unsigned int data[], int len)
 {
-	int ret = 0;
 	struct ccci_modem *md = ccci_md_get_modem_by_id(md_id);
+	unsigned int rat_flag;
+	unsigned int rat_str_int[MD_CFG_RAT_STR5 - MD_CFG_RAT_STR0 + 1];
+	unsigned int wm_idx;
+	char *rat_str;
+	int i, ret;
 
 	if (len < 0 || data == NULL)
 		return -1;
@@ -1160,7 +1399,48 @@ int ccci_md_set_boot_data(unsigned char md_id, unsigned int data[], int len)
 		data[MD_CFG_DUMP_FLAG] == MD_DBG_DUMP_INVALID ?
 		md->per_md_data.md_dbg_dump_flag : data[MD_CFG_DUMP_FLAG];
 
-	return ret;
+	rat_flag = data[MD_CFG_RAT_CHK_FLAG];
+	if (rat_flag) {
+		if (check_rat_at_md_img(md_id, "C") == 0) {
+			char aee_info[32];
+
+			i = scnprintf(aee_info, sizeof(aee_info),
+				"C2K DEP check fail(0x%x)",
+				get_md_bin_capability(md_id));
+			if (i >= (sizeof(aee_info) - 1))
+				CCCI_ERROR_LOG(md_id, TAG, "buf not enough\n");
+			CCCI_ERROR_LOG(md_id, TAG, "C2K DEP check fail\n");
+#ifdef CONFIG_MTK_AEE_FEATURE
+			aed_md_exception_api(NULL, 0, NULL,
+				0, aee_info, DB_OPT_DEFAULT);
+#endif
+			return -1;
+		}
+	}
+
+	for (i = 0; i < (MD_CFG_RAT_STR5 - MD_CFG_RAT_STR0 + 1); i++)
+		rat_str_int[i] = data[MD_CFG_RAT_STR0 + i];
+	rat_str = (char *)rat_str_int;
+	rat_str[sizeof(rat_str_int) - 1] = 0;
+
+	wm_idx = data[MD_CFG_WM_IDX];
+	if (set_soc_md_rt_rat_by_idx(md_id, wm_idx) == 0) {
+		CCCI_NORMAL_LOG(-1, TAG, "Using WM IDX: %u\n", wm_idx);
+		return 0;
+	}
+
+	ret = set_soc_md_rt_rat_str(md_id, rat_str);
+	if (ret < 0) {
+		CCCI_ERROR_LOG(md_id, TAG,
+			"Current setting has mistake!!\n");
+		return -1;
+	}
+
+	if (ret == 1)
+		CCCI_ERROR_LOG(md_id, TAG,
+			"runtime rat setting abnormal, using default!!\n");
+
+	return 0;
 }
 
 struct ccci_mem_layout *ccci_md_get_mem(int md_id)
@@ -1196,7 +1476,7 @@ struct ccci_smem_region *ccci_md_get_smem_by_user_id(int md_id,
 
 void ccci_md_clear_smem(int md_id, int first_boot)
 {
-	struct ccci_smem_region *region;
+	struct ccci_smem_region *region = NULL;
 	unsigned int size;
 
 	if (md_id < 0 || md_id >= MAX_MD_NUM) {
@@ -1643,6 +1923,16 @@ static void config_ap_side_feature(struct ccci_modem *md,
 	md_feature->feature_set[MISC_INFO_CUSTOMER_VAL].support_mask
 		= CCCI_FEATURE_NOT_SUPPORT;
 #endif
+	md_feature->feature_set[MISC_INFO_NTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_SIMNUM].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2NTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_HWGPIO].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_LASTNTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2LASTNTCODE].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_GID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2GID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_LASTGID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
+	md_feature->feature_set[MISC_INFO_2LASTGID].support_mask = CCCI_FEATURE_OPTIONAL_SUPPORT;
 #ifdef FEATURE_SYNC_C2K_MEID
 	md_feature->feature_set[MISC_INFO_C2K_MEID].support_mask
 		= CCCI_FEATURE_MUST_SUPPORT;
@@ -1679,12 +1969,15 @@ static void config_ap_side_feature(struct ccci_modem *md,
 	md_feature->feature_set[NVRAM_CACHE_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_NOT_SUPPORT;
 #endif
+
+/* This item is reserved,only SP use */
+#ifdef ENABLE_SECURITY_SHARE_MEMORY
 	md_feature->feature_set[SECURITY_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_MUST_SUPPORT;
-
-	/* This item is reserved */
+#else
 	md_feature->feature_set[SECURITY_SHARE_MEMORY].support_mask =
 		CCCI_FEATURE_NOT_SUPPORT;
+#endif
 
 #if (MD_GENERATION >= 6297)
 	md_feature->feature_set[MD_MEM_AP_VIEW_INF].support_mask =
@@ -1750,7 +2043,7 @@ static void ccci_md_mem_inf_prepare(int md_id,
 		tbl[add_num].md_view_phy = 0;
 		tbl[add_num].size = ro_rw_size;
 		tbl[add_num].ap_view_phy_lo32 = (u32)ro_rw_base;
-		tbl[add_num].ap_view_phy_hi32 = (u32)(ro_rw_base >> 32);
+		tbl[add_num].ap_view_phy_hi32 = (u32)((unsigned long long)ro_rw_base >> 32);
 		add_num++;
 	} else
 		CCCI_REPEAT_LOG(md_id, TAG, "%s add bank0/1 fail(%d)\n",
@@ -1760,7 +2053,7 @@ static void ccci_md_mem_inf_prepare(int md_id,
 		tbl[add_num].md_view_phy = 0x40000000;
 		tbl[add_num].size = ncrw_size;
 		tbl[add_num].ap_view_phy_lo32 = (u32)ncrw_base;
-		tbl[add_num].ap_view_phy_hi32 = (u32)(ncrw_base >> 32);
+		tbl[add_num].ap_view_phy_hi32 = (u32)((unsigned long long)ncrw_base >> 32);
 		add_num++;
 	} else
 		CCCI_REPEAT_LOG(md_id, TAG, "%s add bank4 nc fail(%d)\n",
@@ -1771,7 +2064,7 @@ static void ccci_md_mem_inf_prepare(int md_id,
 				get_md_smem_cachable_offset(md_id);
 		tbl[add_num].size = crw_size;
 		tbl[add_num].ap_view_phy_lo32 = (u32)crw_base;
-		tbl[add_num].ap_view_phy_hi32 = (u32)(crw_base >> 32);
+		tbl[add_num].ap_view_phy_hi32 = (u32)((unsigned long long)crw_base >> 32);
 		add_num++;
 	} else
 		CCCI_REPEAT_LOG(md_id, TAG, "%s add bank4 c fail(%d)\n",
@@ -1801,6 +2094,100 @@ static void ccci_smem_region_set_runtime(unsigned char md_id, unsigned int id,
 	}
 }
 
+#ifdef CONFIG_MTK_TC1_FEATURE
+void lge_convert_ntcode_format_to_string (struct FactoryNetworkCode *mtk_atcmd_ntcode, char *mcc, char *mnc, char *subset)
+{
+	int length = 0;
+	char buffer[4];
+
+	struct FactoryNetworkCode *in;
+
+	char *out1 = mcc;
+	char *out2 = mnc;
+	char *out3 = subset;
+
+	in = &mtk_atcmd_ntcode[0];
+
+	memset(buffer, 0x00, sizeof(buffer));
+
+	length += sprintf(buffer, "%1X%1X%1X", in->Mcc[0], in->Mcc[1], in->Mcc[2]);
+
+	strncpy(out1, buffer, 3);
+
+	memset(buffer, 0x00, sizeof(buffer));
+
+	length += sprintf(buffer, "%1X%1X%1X", in->Mnc[0], in->Mnc[1], in->Mnc[2]);
+
+	strncpy(out2, buffer, 3);
+
+	memset(buffer, 0x00, sizeof(buffer));
+
+	length += sprintf(buffer, "%1X%1X", in->Subset[0], in->Subset[1]);
+
+	strncpy(out3, buffer, 2);
+
+}
+
+void lge_get_gid_string_from_ntcode (struct FactoryNetworkCode *mtk_atcmd_ntcode, char *gid11, char *gid12, char *gid21, char *gid22)
+{
+	int length = 0;
+	char buffer[5];
+
+	struct FactoryNetworkCode *in;
+
+	char *out1 = gid11;
+	char *out2 = gid12;
+	char *out3 = gid21;
+	char *out4 = gid22;
+
+	in = &mtk_atcmd_ntcode[0];
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid1[0], in->Gid1[1], in->Gid1[2], in->Gid1[3]);
+	strncpy(out1, buffer, 4);
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid1[4], in->Gid1[5], in->Gid1[6], in->Gid1[7]);
+	strncpy(out2, buffer, 4);
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid2[0], in->Gid2[1], in->Gid2[2], in->Gid2[3]);
+	strncpy(out3, buffer, 4);
+
+	memset(buffer, 0x00, sizeof(buffer));
+	length += sprintf(buffer, "%1X%1X%1X%1X", in->Gid2[4], in->Gid2[5], in->Gid2[6], in->Gid2[7]);
+	strncpy(out4, buffer, 4);
+}
+
+int find_ntcode_num(struct FactoryNetworkCode *ntcode_buff)
+{
+	int i=0;
+	char tmcc[4] = "";
+	char tmnc[4] = "";
+	char tsubset[4] = "";
+
+	for (i=0; i<LGE_FAC_MAX_NETWORK_CODE_LIST_NUM; i++)
+	{
+		lge_convert_ntcode_format_to_string (&ntcode_buff[i], tmcc, tmnc, tsubset);
+		pr_err("searchingi=%d : tmcc = %s, tmnc= %s, tsubset= %s  \n", i, tmcc, tmnc, tsubset);
+	}
+
+	for (i=1; i<LGE_FAC_MAX_NETWORK_CODE_LIST_NUM; i++)
+	{
+		lge_convert_ntcode_format_to_string (&ntcode_buff[i], tmcc, tmnc, tsubset);
+		if(strcmp(tmcc,"FFF")==0 && strcmp(tmnc,"FFF")==0 && strcmp(tsubset,"FF")==0)
+		{
+			if(i == 1)
+			     i++;
+			pr_err("Last ntcode is %d \n", i-1);
+			return i-1;
+		}
+	}
+	pr_err("Last ntcode is the last value %d \n", i-1);
+	return i-1;
+}
+#endif
+
 int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 	int length)
 {
@@ -1809,7 +2196,7 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 	u32 total_len;
 	int j;
 	/*runtime data buffer */
-	struct ccci_smem_region *region;
+	struct ccci_smem_region *region = NULL;
 	struct ccci_smem_region *rt_data_region =
 		ccci_md_get_smem_by_user_id(md_id, SMEM_USER_RAW_RUNTIME_DATA);
 	char *rt_data = (char *)rt_data_region->base_ap_view_vir;
@@ -1821,12 +2208,25 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 #if (MD_GENERATION >= 6297)
 	struct ccci_runtime_md_mem_ap_addr rt_mem_view[4];
 #endif
-	struct md_query_ap_feature *md_feature;
+	struct md_query_ap_feature *md_feature = NULL;
 	struct md_query_ap_feature md_feature_ap;
 	struct ccci_runtime_boot_info boot_info;
 	unsigned int random_seed = 0;
 	struct timeval t;
 	unsigned int c2k_flags = 0;
+#ifdef CONFIG_MTK_TC1_FEATURE
+	extern struct FactoryNetworkCode *temp_buf_ntcode;
+	extern char *temp_buf_svn;
+	char mcc[4] = "";
+	char mnc[4] = "";
+	char subset[3] = "";
+	char gid11[5] = "";
+	char gid12[5] = "";
+	char gid21[5] = "";
+	char gid22[5] = "";
+	int nt_num=0;
+#endif
+	char sim_num[4] = "";
 
 	CCCI_BOOTUP_LOG(md->index, TAG,
 		"prepare_runtime_data  AP total %u features\n",
@@ -2065,16 +2465,23 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 				rt_feature.data_len =
 				sizeof(struct ccci_misc_info_element);
 				rt_f_element.feature[0] = md->sbp_code;
-				if (md->per_md_data.config.load_type
-					< modem_ultg)
-					rt_f_element.feature[1] = 0;
-				else
-					rt_f_element.feature[1] =
-					get_wm_bitmap_for_ubin();
+#ifdef CONFIG_MACH_LGE
+//					rt_f_element.feature[1] = 0; // lge_get_wm_id();  // temp - compile error fix
+				rt_f_element.feature[1] = lge_get_wm_id();
+#else
+				rt_f_element.feature[1] = get_soc_md_rt_rat(MD_SYS1);
+#endif
 				CCCI_BOOTUP_LOG(md->index, TAG,
-					"sbp=0x%x,wmid[%d]\n",
+					"sbp=0x%x,wmid[0x%x]\n",
 					rt_f_element.feature[0],
 					rt_f_element.feature[1]);
+				CCCI_NORMAL_LOG(md->index, TAG,
+					"sbp=0x%x,wmid[0x%x]\n",
+					rt_f_element.feature[0],
+					rt_f_element.feature[1]);
+
+				pr_err("%s: ccci sbp=0x%x, wmid[%x]\n", __func__, rt_f_element.feature[0], rt_f_element.feature[1]);
+
 				append_runtime_feature(&rt_data,
 				&rt_feature, &rt_f_element);
 				break;
@@ -2110,15 +2517,8 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 				sizeof(struct ccci_misc_info_element);
 				c2k_flags = 0;
 
-
-				if (is_cdma2000_enable(MD_SYS1)) {
+				if (check_rat_at_rt_setting(MD_SYS1, "C"))
 					c2k_flags |= (1 << 2);
-
-#if (MD_GENERATION == 6290 || MD_GENERATION == 6291)
-					c2k_flags |= (1 << 0);
-					c2k_flags |= (1 << 3);
-#endif
-				}
 				CCCI_NORMAL_LOG(md_id, TAG,
 					"c2k_flags 0x%X; MD_GENERATION: %d\n",
 					c2k_flags, MD_GENERATION);
@@ -2231,6 +2631,180 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 				append_runtime_feature(&rt_data, &rt_feature,
 				&rt_shm);
 				break;
+			case MISC_INFO_CUSTOMER_VAL:
+				rt_feature.data_len =
+					sizeof(struct ccci_misc_info_element);
+				memset((void *)&rt_f_element, 0x0,
+					sizeof(struct ccci_misc_info_element));
+#if defined(CONFIG_LGE_BOOT_MODE)
+				rt_f_element.feature[0] = (int) lge_boot_mode;
+#endif
+				append_runtime_feature(&rt_data, &rt_feature,
+						&rt_f_element);
+				break;
+#ifdef CONFIG_MTK_TC1_FEATURE
+			case MISC_INFO_NTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				lge_convert_ntcode_format_to_string (&temp_buf_ntcode[0], mcc, mnc, subset); //NTCODE
+				strncpy (g_lge_mcc, mcc, 3);
+				strncpy (g_lge_mnc, mnc, 3);
+				strncpy (g_lge_subset, subset, 2);
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mcc=[%s], mnc[%s], subset[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2NTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				lge_convert_ntcode_format_to_string (&temp_buf_ntcode[1], mcc, mnc, subset); //2nd NTCODE
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mcc2=[%s], mnc2[%s], subset2[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_LASTNTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 1)
+					lge_convert_ntcode_format_to_string (&temp_buf_ntcode[nt_num], mcc, mnc, subset); //Last NTCODE
+				else
+				{
+					strncpy (mcc, "FFF", 3);
+					strncpy (mnc, "FFF", 3);
+					strncpy (subset, "FF", 2);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mccLast=[%s], mncLast[%s], subsetLast[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2LASTNTCODE:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				memcpy((char*)&(rt_f_element.feature[3]), temp_buf_svn, 4); //SVN
+				pr_err("%s: svn=[%s]\n", __func__, (char *)(&rt_f_element.feature[3]));
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 2)
+					lge_convert_ntcode_format_to_string (&temp_buf_ntcode[nt_num-1], mcc, mnc, subset); //2nd Last NTCODE
+				else
+				{
+					strncpy (mcc, "FFF", 3);
+					strncpy (mnc, "FFF", 3);
+					strncpy (subset, "FF", 2);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), mcc, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), mnc, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), subset, 3);
+				pr_err("%s: mccLast=[%s], mncLast[%s], subsetLast[%s]\n", __func__,
+                                (char *)(&rt_f_element.feature[0]), (char *)(&rt_f_element.feature[1]), (char *)(&rt_f_element.feature[2]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_GID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				lge_get_gid_string_from_ntcode (&temp_buf_ntcode[0], gid11, gid12, gid21, gid22); //GID
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2GID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				lge_get_gid_string_from_ntcode (&temp_buf_ntcode[1], gid11, gid12, gid21, gid22); //GID
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_LASTGID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 1)
+					lge_get_gid_string_from_ntcode (&temp_buf_ntcode[nt_num], gid11, gid12, gid21, gid22); //GID
+				else
+				{
+					strncpy (gid11, "FFFF", 4);
+					strncpy (gid12, "FFFF", 4);
+					strncpy (gid21, "FFFF", 4);
+					strncpy (gid22, "FFFF", 4);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_2LASTGID:
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				nt_num = find_ntcode_num(temp_buf_ntcode);
+				if (nt_num > 2)
+					lge_get_gid_string_from_ntcode (&temp_buf_ntcode[nt_num-1], gid11, gid12, gid21, gid22); //GID
+				else
+				{
+					strncpy (gid11, "FFFF", 4);
+					strncpy (gid12, "FFFF", 4);
+					strncpy (gid21, "FFFF", 4);
+					strncpy (gid22, "FFFF", 4);
+				}
+				memcpy((char*)&(rt_f_element.feature[0]), gid11, 4);
+				memcpy((char*)&(rt_f_element.feature[1]), gid12, 4);
+				memcpy((char*)&(rt_f_element.feature[2]), gid21, 4);
+				memcpy((char*)&(rt_f_element.feature[3]), gid22, 4);
+				pr_err("%s: send gid=[%s] to modem\n", __func__,(char *)(&rt_f_element.feature[0]));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
+
+			case MISC_INFO_C2K_MEID:
+				pr_err("%s: request: MISC_INFO_C2K_MEID", __func__);
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				CCCI_NORMAL_LOG(md->index, TAG, "before tc1_read_meid_syncform");
+#if defined(FEATURE_SYNC_C2K_MEID)
+				tc1_read_meid_syncform((unsigned char *)&rt_f_element.feature[0], 16);
+#endif
+				CCCI_NORMAL_LOG(md->index, TAG, "MEID %x-%x-%x-%x\n", rt_f_element.feature[0],
+					rt_f_element.feature[1], rt_f_element.feature[2], rt_f_element.feature[3]);
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+
+				pr_err("%s: MEID %x-%x-%x-%x\n", __func__, rt_f_element.feature[0],
+                    rt_f_element.feature[1], rt_f_element.feature[2], rt_f_element.feature[3]);
+				break;
+
+#endif
+			case MISC_INFO_SIMNUM:
+				rt_feature.data_len = sizeof(sim_num);
+				memcpy((char*)&sim_num, g_lge_sim_num, 4);
+				pr_err("send sim number = %s\n", sim_num);
+				append_runtime_feature(&rt_data, &rt_feature, &sim_num);
+				break;
+			case MISC_INFO_HWGPIO:
+				pr_err("MISC_INFO_HWGPIO\n");
+				rt_feature.data_len = sizeof(struct ccci_misc_info_element);
+				pr_err("g_lge_sku_carrier = %s\n", g_lge_sku_carrier);
+				memcpy((char*)&(rt_f_element.feature[0]), g_lge_sku_carrier, sizeof(g_lge_sku_carrier));
+				append_runtime_feature(&rt_data, &rt_feature, &rt_f_element);
+				break;
 			case MD_MTEE_SHARE_MEMORY_ENABLE:
 				rt_feature.data_len = sizeof(unsigned int);
 				/* use the random_seed as temp_u32 value */
@@ -2267,6 +2841,7 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 				rt_mem_view);
 				break;
 #endif
+#ifdef ENABLE_SECURITY_SHARE_MEMORY
 			case SECURITY_SHARE_MEMORY:
 				ccci_smem_region_set_runtime(md_id,
 					SMEM_USER_SECURITY_SMEM,
@@ -2274,6 +2849,7 @@ int ccci_md_prepare_runtime_data(unsigned char md_id, unsigned char *data,
 				append_runtime_feature(&rt_data, &rt_feature,
 				&rt_shm);
 				break;
+#endif
 			default:
 				break;
 			};
