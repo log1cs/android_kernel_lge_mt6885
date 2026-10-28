@@ -1560,6 +1560,10 @@ static void drm_wait_vblank_reply(struct drm_device *dev, unsigned int pipe,
 	reply->tval_usec = ts.tv_nsec / 1000;
 }
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_REFRESH_RATE_DIV)
+extern void lge_skip_vblank(void);
+#endif
+
 int drm_wait_vblank_ioctl(struct drm_device *dev, void *data,
 			  struct drm_file *file_priv)
 {
@@ -1613,6 +1617,10 @@ int drm_wait_vblank_ioctl(struct drm_device *dev, void *data,
 		return -EINVAL;
 
 	vblank = &dev->vblank[pipe];
+
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_REFRESH_RATE_DIV)
+	lge_skip_vblank();
+#endif
 
 	/* If the counter is currently enabled and accurate, short-circuit
 	 * queries to return the cached timestamp of the last vblank.

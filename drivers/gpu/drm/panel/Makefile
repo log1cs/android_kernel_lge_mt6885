@@ -22,6 +22,7 @@ obj-$(CONFIG_DRM_PANEL_AUO_HX83112B_VDO) += panel-auo-hx83112b-vdo.o
 obj-$(CONFIG_DRM_PANEL_OTM1911A_AUO_VDO) += panel-otm1911a-auo-vdo.o
 obj-$(CONFIG_DRM_PANEL_TRULY_TD4330_VDO) += panel-truly-td4330-vdo.o
 obj-$(CONFIG_DRM_PANEL_TRULY_TD4330_CMD) += panel-truly-td4330-cmd.o
+obj-$(CONFIG_DRM_PANEL_BOE_SW43103_CMD) += panel-boe-sw43103-cmd.o
 obj-$(CONFIG_DRM_PANEL_K6885V1_64_ALPHA_01) += k6885v1_64_alpha/panel-k6885v1-64-alpha-01.o
 obj-$(CONFIG_DRM_PANEL_K6885V1_64_ALPHA_VDO_01) += k6885v1_64_alpha/panel-k6885v1-64-alpha-vdo-01.o
 obj-$(CONFIG_DRM_PANEL_K6885V1_64_ALPHA_VDO_02) += k6885v1_64_alpha/panel-k6885v1-64-alpha-vdo-02.o
@@ -73,4 +74,18 @@ obj-$(CONFIG_DRM_PANEL_IT6113) += ite6113.o
 obj-$(CONFIG_DRM_PANEL_NT36532_DSI_VDO_TIANMA) += panel-nt36532-dsi-vdo-tianma.o
 obj-$(CONFIG_BACKLIGHT_KTZ8866) += ktz8866.o
 obj-$(CONFIG_DRM_PANEL_NT36532_DSI_VDO_BOE_6382) += panel-nt36532-dsi-vdo-boe-6382.o
+
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/mmdvfs/
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/dramc/$(MTK_PLATFORM)
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/smi/
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/mmp/
+subdir-ccflags-y += -I$(srctree)/drivers/devfreq/
+subdir-ccflags-y += -I$(srctree)/drivers/iommu/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/chargepump/inc/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/lge/
+subdir-ccflags-y += -I$(srctree)/include/soc/mediatek/lge/
 

@@ -6,6 +6,9 @@
 #ifndef __MTKFB_DEBUG_H
 #define __MTKFB_DEBUG_H
 
+#include <drm/drm_mipi_dsi.h>
+#include "mtk_panel_ext.h"
+
 #define ERROR_BUFFER_COUNT 4
 #define FENCE_BUFFER_COUNT 22
 #define DEBUG_BUFFER_COUNT 30
@@ -78,5 +81,17 @@ unsigned int mtk_dbg_get_lfr_dbg_value(void);
 #endif
 int mtk_disp_ioctl_debug_log_switch(struct drm_device *dev, void *data,
 	struct drm_file *file_priv);
+
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+int lge_ddic_dsi_send_cmd(enum lge_ddic_dsi_cmd_set_type type,
+			bool blocking, int need_lock);
+int lge_ddic_dsi_send_cmd_msg(struct mipi_dsi_msg *msg,
+			bool blocking, int need_lock);
+int lge_ddic_dsi_read_cmd_msg(struct mipi_dsi_msg *cmd_msg, int need_lock);
+int mtkfb_set_backlight_level_ex(unsigned int level);
+#endif
+#if defined(CONFIG_LGE_DISPLAY_COMMON) || defined(CONFIG_LGE_DISPLAY_TUNING_SUPPORT) || defined(CONFIG_LGE_VSYNC_SKIP)
+struct drm_crtc* lge_get_crtc(void);
+#endif
 
 #endif

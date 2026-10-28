@@ -241,6 +241,11 @@ enum mtk_ddp_io_cmd {
 	DSI_LFR_STATUS_CHECK,
 	WDMA_WRITE_DST_ADDR0,
 	WDMA_READ_DST_SIZE,
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	DSI_LGE_TX_CMD_SET,
+	DSI_LGE_TX_CMD_SET_BY_MSG,
+	DSI_LGE_CMD_READ,
+#endif
 };
 
 struct golden_setting_context {
@@ -413,10 +418,10 @@ static inline void mtk_ddp_comp_layer_config(struct mtk_ddp_comp *comp,
 {
 	if (comp && comp->funcs && comp->funcs->layer_config &&
 			!comp->blank_mode) {
-		DDPDBG("[DRM]func:%s, line:%d ==>\n",
+		/*DDPDBG("[DRM]func:%s, line:%d ==>\n",
 			__func__, __LINE__);
 		DDPDBG("comp_funcs:0x%p, layer_config:0x%p\n",
-			comp->funcs, comp->funcs->layer_config);
+			comp->funcs, comp->funcs->layer_config);*/
 
 		comp->funcs->layer_config(comp, idx, state, handle);
 	}

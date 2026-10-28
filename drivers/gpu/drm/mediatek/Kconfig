@@ -98,3 +98,20 @@ config MTK_HDMI_SUPPORT
 	  Choose this option if you want to enable
 	  DPTX driver, and this config depends on
 	  DRM_MEDIATEK.
+
+config MTK_HDR_COLOR_GAIN_RGB
+	hex "Config CCORR parameters for HDR layers"
+	default 0
+	help
+	  This control color gain for hdr screen.
+	  0~11 bit for blue gain.
+	  12~23 bit for green gain.
+	  24~63 bit for red gain.
+
+config CAYMAN_HDMI
+	bool "Enable or disable Cayman HDMI fix"
+	default n
+	help
+	  To enable or disable cayman specific HDMI fix.
+
+source "drivers/gpu/drm/mediatek/lge/Kconfig"
