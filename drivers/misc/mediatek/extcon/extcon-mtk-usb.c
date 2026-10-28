@@ -438,8 +438,12 @@ static int mtk_usb_extcon_tcpc_init(struct mtk_extcon_info *extcon)
 
 	extcon->tcpc_nb.notifier_call = mtk_extcon_tcpc_notifier;
 	ret = register_tcp_dev_notifier(tcpc_dev, &extcon->tcpc_nb,
+#ifndef CONFIG_LGE_DUAL_SCREEN
 		TCP_NOTIFY_TYPE_USB | TCP_NOTIFY_TYPE_VBUS |
 		TCP_NOTIFY_TYPE_MISC);
+#else
+		TCP_NOTIFY_TYPE_ALL);
+#endif
 	if (ret < 0) {
 		dev_err(extcon->dev, "register notifer fail\n");
 		return -EINVAL;

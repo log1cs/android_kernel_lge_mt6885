@@ -34,7 +34,20 @@
 
 #include "extcon.h"
 
+#ifdef CONFIG_LGE_PM_PRM
+#if __has_include("../soc/mediatek/lge/power/main/lge_prm.h")
+#include "../soc/mediatek/lge/power/main/lge_prm.h"
+#else
+extern void lge_prm_display_set_event(int event, int state);
+#define LGE_PRM_DISPLAY_EVENT_DD2_STATE 2
+#endif
+#endif
+
 #define SUPPORTED_CABLE_MAX	32
+
+#ifdef CONFIG_LGE_ACCDET
+#define EXTCON_HEADSET_NUM 100
+#endif
 
 static const struct __extcon_info {
 	unsigned int type;
@@ -175,6 +188,18 @@ static const struct __extcon_info {
 		.id = EXTCON_DISP_HMD,
 		.name = "HMD",
 	},
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+	[EXTCON_DISP_DS1] = {
+		.type = EXTCON_TYPE_DISP | EXTCON_TYPE_USB,
+		.id = EXTCON_DISP_DS1,
+		.name = "DualDisplay",
+	},
+	[EXTCON_DISP_DS2] = {
+		.type = EXTCON_TYPE_DISP | EXTCON_TYPE_USB,
+		.id = EXTCON_DISP_DS2,
+		.name = "DS2",
+	},
+#endif
 
 	/* Miscellaneous external connector */
 	[EXTCON_DOCK] = {
@@ -589,6 +614,16 @@ int extcon_set_state(struct extcon_dev *edev, unsigned int id, bool state)
 out:
 	spin_unlock_irqrestore(&edev->lock, flags);
 
+#ifdef CONFIG_LGE_PM_PRM
+#if defined(CONFIG_LGE_DUAL_SCREEN)
+	if (id == EXTCON_DISP_DS2) {
+		pr_err("prm_log: DualDisplay2 updated, id:%u, state:%d\n", id, state);
+		lge_prm_display_set_event(LGE_PRM_DISPLAY_EVENT_DD2_STATE, state);
+	} else {
+		pr_err("prm_log: DualDisplay updated, id:%u, state:%d\n", id, state);
+	}
+#endif
+#endif
 	return ret;
 }
 EXPORT_SYMBOL_GPL(extcon_set_state);
@@ -1168,14 +1203,23 @@ int extcon_dev_register(struct extcon_dev *edev)
 	edev->dev.class = extcon_class;
 	edev->dev.release = extcon_dev_release;
 
+#ifdef CONFIG_LGE_ACCDET
+	edev->name = edev->name ? edev->name : dev_name(edev->dev.parent);
+#else
 	edev->name = dev_name(edev->dev.parent);
+#endif
 	if (IS_ERR_OR_NULL(edev->name)) {
 		dev_err(&edev->dev,
 			"extcon device name is null\n");
 		return -EINVAL;
 	}
+#ifdef CONFIG_LGE_ACCDET
+	dev_set_name(&edev->dev, "extcon%lu",
+			(!strcmp(edev->name, "h2w")) ? EXTCON_HEADSET_NUM : (unsigned long)atomic_inc_return(&edev_no));
+#else
 	dev_set_name(&edev->dev, "extcon%lu",
 			(unsigned long)atomic_inc_return(&edev_no));
+#endif
 
 	if (edev->max_supported) {
 		char buf[10];
