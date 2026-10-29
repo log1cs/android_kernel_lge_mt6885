@@ -23,9 +23,9 @@
 #include <linux/sched/clock.h>
 #include <linux/mmc/mmc.h>
 #include "mtk-msdc.h"
-#include <../core/core.h>
-#include <../core/card.h>
-#include <../core/mmc_ops.h>
+#include "../core/core.h"
+#include "../core/card.h"
+#include "../core/mmc_ops.h"
 #include "mtk-sd-dbg.h"
 
 struct msdc_host *mtk_msdc_host[] = { NULL, NULL, NULL};

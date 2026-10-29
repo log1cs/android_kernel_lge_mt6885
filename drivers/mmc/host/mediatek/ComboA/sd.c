@@ -1465,6 +1465,7 @@ static unsigned int msdc_command_start(struct msdc_host   *host,
 		break;
 #endif
 	case MMC_GEN_CMD:
+	case MMC_VENDOR_CMD63:
 		if (cmd->data->flags & MMC_DATA_WRITE)
 			rawcmd |= (1 << 13);
 		if (cmd->data->blocks > 1)
