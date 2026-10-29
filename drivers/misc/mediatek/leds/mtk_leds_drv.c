@@ -68,7 +68,7 @@ static int I2C_SET_FOR_BACKLIGHT  = 350;
  * for DISP backlight High resolution
  *****************************************************************************/
 #ifdef LED_INCREASE_LED_LEVEL_MTKPATCH
-#define LED_INTERNAL_LEVEL_BIT_CNT 10
+#define LED_INTERNAL_LEVEL_BIT_CNT 11
 #endif
 /* Fix dependency if CONFIG_MTK_LCM not ready */
 void __weak disp_aal_notify_backlight_changed(int bl_1024) {};

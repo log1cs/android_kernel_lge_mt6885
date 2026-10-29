@@ -4,6 +4,8 @@
  *
  */
 
+#include <linux/leds.h>
+
 /****************************************************************************
  * LED DRV functions
  ***************************************************************************/
@@ -26,4 +28,11 @@ extern void disp_pq_notify_backlight_changed(int bl_1024);
 extern int enable_met_backlight_tag(void);
 extern int output_met_backlight_tag(int level);
 extern int disp_ccorr_change_backlight(int bl_1024);
+
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+int lge_get_user_brightness_level(void);
+void lge_set_last_brightness(int brightness);
+int lge_get_last_brightness(void);
+int mt_leds_brightness_set_ex(char *name, int level);
+#endif
 

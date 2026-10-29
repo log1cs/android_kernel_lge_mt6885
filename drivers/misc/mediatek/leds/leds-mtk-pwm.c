@@ -107,6 +107,24 @@ static int call_notifier(int event, struct mtk_led_data *led_dat)
 	return err;
 }
 
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+void lge_set_last_brightness(int brightness)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+	panel = mtk_crtc->panel_ext;
+	panel->lge.bl_level = brightness;
+}
+
+int lge_get_last_brightness(void)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+	panel = mtk_crtc->panel_ext;
+	return panel->lge.bl_level;
+}
+#endif
+
 /****************************************************************************
  * DEBUG MACROS
  ***************************************************************************/

@@ -23,3 +23,4 @@ extern int backlight_brightness_set(int level);
 #define backlight_brightness_set(level) do { } while (0)
 #endif
 extern int disp_bls_set_max_backlight(unsigned int level);
+#define LED_INCREASE_LED_LEVEL_MTKPATCH

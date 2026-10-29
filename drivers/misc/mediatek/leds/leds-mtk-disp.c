@@ -18,13 +18,30 @@
 
 #include "leds-mtk-disp.h"
 
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+#include "../../../gpu/drm/mediatek/lge/brightness/lge_brightness.h"
+#include "mtk_drm_crtc.h"
+#include "mtk_debug.h"
+#include "mtk_disp_aal.h"
+#endif
 
 #ifdef CONFIG_DRM_MEDIATEK
 extern int mtkfb_set_backlight_level(int level, int div);
 #endif
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+extern int mtkfb_set_backlight_level_ex(unsigned int level);
+#endif
 
 #ifdef MET_USER_EVENT_SUPPORT
 #include <mt-plat/met_drv.h>
+#endif
+
+#ifdef CONFIG_MTK_AAL_SUPPORT
+struct semaphore aal_lock;
+#endif
+
+#ifdef CONFIG_MTK_AAL_SUPPORT
+#define AAL_MIN_BRIGHTNESS 108
 #endif
 
 #define CONFIG_LEDS_BRIGHTNESS_CHANGED
@@ -105,6 +122,58 @@ static int call_notifier(int event, struct mtk_led_data *led_dat)
 	return err;
 }
 
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+
+bool lge_get_allow_bl_update(void)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+
+	panel = mtk_crtc->panel_ext;
+
+	return panel->lge.allow_bl_update;
+}
+
+void lge_set_last_brightness(int brightness)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+
+	panel = mtk_crtc->panel_ext;
+	panel->lge.bl_level = brightness;
+}
+
+int lge_get_last_brightness(void)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+
+	panel = mtk_crtc->panel_ext;
+
+	return panel->lge.bl_level;
+}
+
+void lge_set_user_brightness_level(int brightness)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+
+	panel = mtk_crtc->panel_ext;
+	panel->lge.bl_user_level = brightness;
+}
+
+int lge_get_user_brightness_level(void)
+{
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(lge_get_crtc());
+	struct mtk_panel_ext *panel = NULL;
+
+	panel = mtk_crtc->panel_ext;
+
+	return panel->lge.bl_user_level;
+}
+
+#endif
+
 /****************************************************************************
  * DEBUG MACROS
  ***************************************************************************/
@@ -165,10 +234,11 @@ static int getLedDespIndex(char *name)
 static int led_level_disp_set(struct mtk_led_data *s_led,
 	int brightness)
 {
-
+#ifndef CONFIG_LGE_DISPLAY_COMMON
 	brightness = min(brightness, s_led->conf.max_level);
 	if (brightness == s_led->conf.level)
 		return 0;
+#endif
 
 #ifdef CONFIG_DRM_MEDIATEK
 	mtkfb_set_backlight_level(brightness, 0);
@@ -182,6 +252,23 @@ static int led_level_disp_set(struct mtk_led_data *s_led,
 /****************************************************************************
  * add API for temperature control
  ***************************************************************************/
+
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_RECOVERY)
+int getLastBrightness(char *name)
+{
+	struct mtk_led_data *led_dat = NULL;
+	int index = getLedDespIndex(name);
+	if (index < 0) {
+		pr_notice("can not find leds by led_desp %s", name);
+		return -1;
+	}
+	led_dat = container_of(leds_info->leds[index],
+		struct mtk_led_data, desp);
+
+	return led_dat->last_level;
+}
+EXPORT_SYMBOL(getLastBrightness);
+#endif
 
 int mt_leds_max_brightness_set(char *name, int percent, bool enable)
 {
@@ -231,18 +318,49 @@ int mt_leds_brightness_set(char *name, int level)
 		pr_notice("can not find leds by led_desp %s", name);
 		return -1;
 	}
+#ifdef CONFIG_MTK_AAL_SUPPORT
+	if(!lge_get_allow_bl_update()) {
+		printk("[LEDS] skip set brightness for primary for ex brightness\n");
+		return 0;
+	}
+#endif
 	led_dat = container_of(leds_info->leds[index],
 		struct mtk_led_data, desp);
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	led_Level = level;
+	return led_level_disp_set(led_dat, led_Level);
+#else
 	led_Level = (
 		(((1 << led_dat->conf.led_bits) - 1) * level
 		+ (((1 << led_dat->conf.trans_bits) - 1) / 2))
 		/ ((1 << led_dat->conf.trans_bits) - 1));
 	led_level_disp_set(led_dat, led_Level);
 	led_dat->last_level = led_Level;
+#endif
 
 	return 0;
 }
 EXPORT_SYMBOL(mt_leds_brightness_set);
+
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+int mt_leds_brightness_set_ex(char *name, int level)
+{
+	struct mtk_led_data *led_dat;
+	int index, led_Level;
+
+	index = getLedDespIndex(name);
+	if (index < 0) {
+		pr_notice("can not find leds by led_desp %s", name);
+		return -1;
+	}
+
+	led_dat = container_of(leds_info->leds[index],
+		struct mtk_led_data, desp);
+	led_Level = level;
+	return mtkfb_set_backlight_level_ex(led_Level);
+}
+EXPORT_SYMBOL(mt_leds_brightness_set_ex);
+#endif
 
 static int led_level_set(struct led_classdev *led_cdev,
 					  enum led_brightness brightness)
@@ -257,12 +375,32 @@ static int led_level_set(struct led_classdev *led_cdev,
 	if (led_dat->brightness == brightness)
 		return 0;
 
+#ifdef CONFIG_MTK_AAL_SUPPORT
+	down_interruptible(&aal_lock);
+	if(brightness < AAL_MIN_BRIGHTNESS && disp_aal_get_ess_en()){
+		disp_aal_set_ess_en(0);
+		printk("[AAL] level : %d, Ess turn off!!\n", brightness);
+	} else if(brightness >= AAL_MIN_BRIGHTNESS && !disp_aal_get_ess_en()){
+		disp_aal_set_ess_en(1);
+		printk("[AAL] level : %d, Ess turn on!!\n", brightness);
+	}
+	up(&aal_lock);
+#endif
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	if(brightness > 0)
+		trans_level = lge_get_brightness_mapping_value(brightness);
+	else
+		trans_level = 0;
+	lge_set_user_brightness_level(brightness);
+	led_debug_log(led_dat, brightness, trans_level);
+#else
 	trans_level = (
 		(((1 << led_dat->conf.trans_bits) - 1) * brightness
 		+ (((1 << led_dat->conf.led_bits) - 1) / 2))
 		/ ((1 << led_dat->conf.led_bits) - 1));
 
 	led_debug_log(led_dat, brightness, trans_level);
+#endif
 
 #ifdef MET_USER_EVENT_SUPPORT
 	if (enable_met_backlight_tag())
@@ -271,7 +409,12 @@ static int led_level_set(struct led_classdev *led_cdev,
 
 	led_dat->brightness = brightness;
 #ifdef CONFIG_LEDS_BRIGHTNESS_CHANGED
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	lge_backlight_device_update_status();
+	return 0;
+#else
 	call_notifier(1, led_dat);
+#endif
 #endif
 #ifdef CONFIG_MTK_AAL_SUPPORT
 	disp_pq_notify_backlight_changed(trans_level);
@@ -350,7 +493,11 @@ static int mtk_leds_parse_dt(struct device *dev,
 			s_led->conf.led_bits = 8;
 		}
 		s_led->conf.cdev.max_brightness =
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+			2047;
+#else
 			(1 << s_led->conf.led_bits) - 1;
+#endif
 		ret = of_property_read_u32(child,
 			"trans-bits", &(s_led->conf.trans_bits));
 		if (ret) {
@@ -439,6 +586,9 @@ static int mtk_leds_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, m_leds);
 	m_leds->dev = dev;
 
+#ifdef CONFIG_MTK_AAL_SUPPORT
+	sema_init(&aal_lock, 1);
+#endif
 	pr_info("probe end ---");
 
 	return ret;

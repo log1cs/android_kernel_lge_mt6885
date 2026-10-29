@@ -3062,6 +3062,12 @@ void disp_aal_set_ess_en(int enable)
 		enable, enable_command, ESS_LEVEL_BY_CUSTOM_LIB, level_command);
 }
 
+int disp_aal_get_ess_en(void)
+{
+	return g_aal_ess_en & 0x1;
+}
+EXPORT_SYMBOL(disp_aal_get_ess_en);
+
 void disp_aal_set_dre_en(int enable)
 {
 	unsigned long flags;

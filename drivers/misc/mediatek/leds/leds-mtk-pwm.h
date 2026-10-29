@@ -22,4 +22,9 @@ int mtk_leds_register_notifier(struct notifier_block *nb);
 int mtk_leds_unregister_notifier(struct notifier_block *nb);
 int mt_leds_brightness_set(char *name, int bl_1024);
 int mt_leds_max_brightness_set(char *name, int percent, bool enable);
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+void lge_set_last_brightness(int brightness);
+int lge_get_last_brightness(void);
+int mt_leds_brightness_set_ex(char *name, int level);
+#endif
 
