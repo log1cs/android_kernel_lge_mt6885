@@ -49,6 +49,8 @@ endif
 # platform code
 obj-y += ../$(MTK_PLATFORM)/
 
+ccflags-y += -I$(srctree)/sound/soc/mediatek/audio_dsp/v2
+
 # spm
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include
 
