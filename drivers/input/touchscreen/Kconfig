@@ -14,6 +14,7 @@ source "drivers/input/touchscreen/mediatek/Kconfig"
 source "drivers/input/touchscreen/NT36672C/Kconfig"
 
 if INPUT_TOUCHSCREEN
+source "drivers/input/touchscreen/lge/Kconfig"
 
 config TOUCHSCREEN_PROPERTIES
 	def_tristate INPUT

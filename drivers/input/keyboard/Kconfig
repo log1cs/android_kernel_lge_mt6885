@@ -765,4 +765,11 @@ config KEYBOARD_MTK
 	  module will be called mtk-kpd.
 
 source "drivers/input/keyboard/mediatek/Kconfig"
+
+config LGE_HALLIC_SUPPORT
+	bool "LGE HALLIC Support"
+	default n
+	help
+	  Say Y here if you want to use hall ic. If unuse, say N.
+
 endif
