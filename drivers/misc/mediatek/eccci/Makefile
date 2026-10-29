@@ -30,8 +30,13 @@ MTK_PLATFORM := mt6885
 else ifeq (y, $(filter y, $(CONFIG_MACH_MT6833)))
 MTK_PLATFORM := mt6833
 else
-MTK_PLATFORM := $(CONFIG_MTK_PLATFORM)
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 endif
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
 
 ifeq ($(CONFIG_MTK_ECCCI_DRIVER), y)
 CCCI_OBJ=y
@@ -49,6 +54,7 @@ $(info MTK_PLATFORM := $(MTK_PLATFORM))
 
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/eccci/inc/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/eccci/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/eccci/$(MTK_PLATFORM)
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/ccmni/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/conn_md/include/

@@ -13,6 +13,13 @@
 
 ifeq ($(CONFIG_MTK_ECCCI_DRIVER), y)
 
+ifndef MTK_PLATFORM
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+endif
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
+
 ccflags-y += -I$(srctree)/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/eccci/$(MTK_PLATFORM)
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/eccci/inc/
