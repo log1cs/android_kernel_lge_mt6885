@@ -39,6 +39,12 @@
 #include "dummy.h"
 #include "internal.h"
 
+#ifdef CONFIG_LGE_PM
+#ifdef CONFIG_PROC_FS
+#include <linux/proc_fs.h>
+#endif
+#endif
+
 #define rdev_crit(rdev, fmt, ...)					\
 	pr_crit("%s: " fmt, rdev_get_name(rdev), ##__VA_ARGS__)
 #define rdev_err(rdev, fmt, ...)					\
@@ -4810,7 +4816,7 @@ static const struct file_operations supply_map_fops = {
 #endif
 };
 
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 struct summary_data {
 	struct seq_file *s;
 	struct regulator_dev *parent;
@@ -4927,7 +4933,7 @@ static int regulator_summary_open(struct inode *inode, struct file *file)
 #endif
 
 static const struct file_operations regulator_summary_fops = {
-#ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_PROC_FS)
 	.open		= regulator_summary_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
@@ -4952,6 +4958,12 @@ static int __init regulator_init(void)
 			    NULL, &regulator_summary_fops);
 
 	regulator_dummy_init();
+
+#ifdef CONFIG_LGE_PM
+#ifdef CONFIG_PROC_FS
+	proc_create("regulator_summary", 0444, NULL, &regulator_summary_fops);
+#endif
+#endif
 
 	return ret;
 }
