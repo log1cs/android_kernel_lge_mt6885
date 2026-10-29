@@ -13,6 +13,9 @@
 
 ccflags-y +=	\
 	-I$(PPM_ROOT_DIR)/inc \
+	-I$(PPM_ROOT_DIR)/src/mach/mt6885 \
+	-I$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6885/include \
+	-I$(srctree)/drivers/misc/mediatek/include/mt-plat \
 	-I$(srctree)/drivers/misc/mediatek/base/power/$(CONFIG_MTK_PLATFORM)/	\
 	-I$(srctree)/drivers/misc/mediatek/thermal/$(CONFIG_MTK_PLATFORM)/inc/  \
 	-I$(srctree)/drivers/misc/mediatek/base/power/include \
