@@ -181,6 +181,9 @@ obj-$(CONFIG_MTK_DFD_INTERNAL_DUMP) += dfd/
 obj-$(CONFIG_MTK_GIC_EXT) += ext_gic/
 obj-$(CONFIG_MTK_SYS_CIRQ) += cirq/
 obj-$(CONFIG_MTK_SECURITY_SW_SUPPORT) += masp/
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/tc1_interface/),)
+obj-$(CONFIG_MTK_TC1_FEATURE)   += tc1_interface/
+endif
 obj-y += rps/
 ifeq ($(CONFIG_MACH_MT6768),y)
 obj-y += spi_slave_drv/

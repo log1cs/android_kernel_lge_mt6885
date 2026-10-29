@@ -360,6 +360,7 @@ source "drivers/misc/mediatek/uart/Kconfig"
 source "drivers/misc/mediatek/accdet/Kconfig"
 source "drivers/misc/mediatek/auxadc/Kconfig"
 source "drivers/misc/mediatek/rtc/Kconfig"
+source "drivers/misc/mediatek/tc1_interface/Kconfig"
 endmenu # Other Peripheral
 
 menu "Memory"
