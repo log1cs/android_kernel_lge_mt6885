@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2018 MediaTek Inc.
 
-#include <audio_ringbuf.h>
+#include "audio_ringbuf.h"
 
 #include <linux/string.h>
 #include <linux/vmalloc.h>

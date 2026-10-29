@@ -15,6 +15,7 @@ obj-y += adsp_mbox.o
 obj-y += adsp_excep.o
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/adsp/common_v2
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/adsp/mt6885
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/audio_ipi/common_v2/framework
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(CONFIG_MTK_PLATFORM)/include/mach
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include

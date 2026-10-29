@@ -14,6 +14,7 @@
 
 ### include
 ccflags-y += \
+	-I$(srctree)/drivers/misc/mediatek/audio_ipi/common_v2/framework \
 	-I$(srctree)/drivers/misc/mediatek/base/power/include \
 	-I$(srctree)/drivers/misc/mediatek/scp/include \
 	-I$(srctree)/drivers/misc/mediatek/scp/cm4 \
