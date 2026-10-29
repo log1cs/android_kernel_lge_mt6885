@@ -63,6 +63,36 @@ enum typec_accessory {
 
 #define TYPEC_MAX_ACCESSORY	3
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+enum typec_partner_cc_status {
+	TYPEC_PARTNER_CC_OPEN,
+	TYPEC_PARTNER_CC_RA,
+	TYPEC_PARTNER_CC_RD,
+	TYPEC_PARTNER_CC_RESEVED3,
+	TYPEC_PARTNER_CC_RESEVED4,
+	TYPEC_PARTNER_CC_RP_DEFAULT,
+	TYPEC_PARTNER_CC_RP_1P5A,
+	TYPEC_PARTNER_CC_RP_3A,
+	TYPEC_PARTNER_CC_RESEVED8,
+	TYPEC_PARTNER_CC_RESEVED9,
+	TYPEC_PARTNER_CC_RESEVED10,
+	TYPEC_PARTNER_CC_RESEVED11,
+	TYPEC_PARTNER_CC_RESEVED12,
+	TYPEC_PARTNER_CC_RESEVED13,
+	TYPEC_PARTNER_CC_RESEVED14,
+	TYPEC_PARTNER_CC_DRP_TOGGLING,
+};
+
+enum typec_pd_rev {
+	TYPEC_PD_REV_RESERVED,
+	TYPEC_PD_REV_10,
+	TYPEC_PD_REV_20,
+	TYPEC_PD_REV_30,
+	TYPEC_PD_REV_NOT_SUPPORTED,
+	TYPEC_PD_REV_NONE,
+};
+#endif
+
 enum typec_orientation {
 	TYPEC_ORIENTATION_NONE,
 	TYPEC_ORIENTATION_NORMAL,
@@ -246,4 +276,18 @@ int typec_set_mode(struct typec_port *port, int mode);
 int typec_find_port_power_role(const char *name);
 int typec_find_power_role(const char *name);
 int typec_find_port_data_role(const char *name);
+
+#ifdef CONFIG_LGE_USB_TYPE_C
+void typec_set_partner_cc_status(struct typec_port *port,
+				 enum typec_partner_cc_status cc1,
+				 enum typec_partner_cc_status cc2);
+void typec_set_pd_rev(struct typec_port *port, enum typec_pd_rev pd_rev);
+#if	0
+void typec_set_rdo(struct typec_port *port, u32 rdo);
+void typec_set_pdos(struct typec_port *port, u32 pdo[]);
+#endif
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+void typec_set_moisture(struct typec_port *port, u32 moisture);
+#endif
+#endif
 #endif /* __LINUX_USB_TYPEC_H */

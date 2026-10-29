@@ -242,6 +242,10 @@ struct usb_function {
 	int			(*get_status)(struct usb_function *);
 	int			(*func_suspend)(struct usb_function *,
 						u8 suspend_opt);
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+	int			(*set_mac_os)(struct usb_function *);
+	int			(*set_config)(struct usb_function *, int);
+#endif
 	unsigned		func_is_suspended:1;
 	unsigned		func_wakeup_allowed:1;
 	unsigned		func_wakeup_pending:1;
@@ -529,6 +533,10 @@ struct usb_composite_dev {
 	/* public: */
 	unsigned int			setup_pending:1;
 	unsigned int			os_desc_pending:1;
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+	bool				is_mac_os;
+	bool				disable_multi_config;
+#endif
 };
 
 extern int usb_string_id(struct usb_composite_dev *c);

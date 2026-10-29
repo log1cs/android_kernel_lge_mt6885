@@ -36,6 +36,10 @@
 #include "u_os_desc.h"
 #include "configfs.h"
 
+#ifdef CONFIG_LGE_USB_GADGET
+#include <linux/ctype.h>
+#endif
+
 #define FUNCTIONFS_MAGIC	0xa647361 /* Chosen by a honest dice roll ;) */
 
 /* Reference counter handling */
@@ -3146,6 +3150,9 @@ static int _ffs_func_bind(struct usb_configuration *c,
 
 	int fs_len, hs_len, ss_len, ret, i;
 	struct ffs_ep *eps_ptr;
+#ifdef CONFIG_LGE_USB_GADGET
+	int j;
+#endif
 
 	/* Make it a single chunk, less management later on */
 	vla_group(d);
@@ -3275,6 +3282,14 @@ static int _ffs_func_bind(struct usb_configuration *c,
 				i * sizeof(struct usb_os_desc);
 			desc->ext_compat_id =
 				vla_ptr(vlabuf, d, ext_compat) + i * 16;
+#ifdef CONFIG_LGE_USB_GADGET
+			for (j = 0; j < 16; j++) {
+				if (!ffs->dev_name[j])
+					break;
+				desc->ext_compat_id[j] =
+					toupper(ffs->dev_name[j]);
+			}
+#endif
 			INIT_LIST_HEAD(&desc->ext_prop);
 		}
 		ret = ffs_do_os_descs(ffs->ms_os_descs_count,
@@ -3290,7 +3305,14 @@ static int _ffs_func_bind(struct usb_configuration *c,
 		c->cdev->use_os_string ? ffs->interfaces_count : 0;
 
 	/* And we're done */
+#ifdef CONFIG_LGE_USB_GADGET_MULTI_CONFIG
+	if (c->bConfigurationValue == 1)
+		ffs_event_add(ffs, FUNCTIONFS_BIND);
+	else
+		pr_info("%s: skip FUNCTIONFS_BIND event\n", ffs->dev_name);
+#else
 	ffs_event_add(ffs, FUNCTIONFS_BIND);
+#endif
 	return 0;
 
 error:
@@ -3331,6 +3353,12 @@ static int ffs_func_set_alt(struct usb_function *f,
 	struct ffs_function *func = ffs_func_from_usb(f);
 	struct ffs_data *ffs = func->ffs;
 	int ret = 0, intf;
+
+	pr_info("%s - ffs->state:%d\n", __func__, ffs->state);
+	if (ffs->epfiles == NULL) {
+		pr_info("%s - UAF fix\n", __func__);
+		return -ENODEV;
+	}
 
 	if (alt != (unsigned)-1) {
 		intf = ffs_func_revmap_intf(func, interface);

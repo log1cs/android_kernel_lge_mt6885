@@ -46,6 +46,14 @@ struct typec_port {
 	enum typec_role			vconn_role;
 	enum typec_pwr_opmode		pwr_opmode;
 	enum typec_port_type		port_type;
+#ifdef CONFIG_LGE_USB_TYPE_C
+	enum typec_partner_cc_status	partner_cc1;
+	enum typec_partner_cc_status	partner_cc2;
+	enum typec_pd_rev		pd_rev;
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+	u32				moisture;
+#endif
+#endif
 	struct mutex			port_type_lock;
 
 	enum typec_orientation		orientation;
@@ -79,6 +87,27 @@ static const char * const typec_accessory_modes[] = {
 	[TYPEC_ACCESSORY_AUDIO]		= "analog_audio",
 	[TYPEC_ACCESSORY_DEBUG]		= "debug",
 };
+
+#ifdef CONFIG_LGE_USB_TYPE_C
+static const char * const typec_partner_cc_status[] = {
+	[TYPEC_PARTNER_CC_OPEN]			= "Open",
+	[TYPEC_PARTNER_CC_RP_DEFAULT]	= "Rp Default",
+	[TYPEC_PARTNER_CC_RP_1P5A]		= "Rp 1.5A",
+	[TYPEC_PARTNER_CC_RP_3A]		= "Rp 3A",
+	[TYPEC_PARTNER_CC_RD]			= "Rd",
+	[TYPEC_PARTNER_CC_RA]			= "Ra",
+	[TYPEC_PARTNER_CC_DRP_TOGGLING]	= "DRP TOGGLING",
+};
+
+static const char * const typec_pd_rev[] = {
+	[TYPEC_PD_REV_RESERVED]		= "reserved",
+	[TYPEC_PD_REV_10]			= "1.0",
+	[TYPEC_PD_REV_20]			= "2.0",
+	[TYPEC_PD_REV_30]			= "3.0",
+	[TYPEC_PD_REV_NOT_SUPPORTED]	= "not supported",
+	[TYPEC_PD_REV_NONE]			= "none",
+};
+#endif
 
 static struct usb_pd_identity *get_pd_identity(struct device *dev)
 {
@@ -1265,6 +1294,45 @@ static ssize_t usb_power_delivery_revision_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(usb_power_delivery_revision);
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static ssize_t cc1_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	struct typec_port *p = to_typec_port(dev);
+
+	return sprintf(buf, "%s\n", typec_partner_cc_status[p->partner_cc1]);
+}
+static DEVICE_ATTR_RO(cc1);
+
+static ssize_t cc2_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	struct typec_port *p = to_typec_port(dev);
+
+	return sprintf(buf, "%s\n", typec_partner_cc_status[p->partner_cc2]);
+}
+static DEVICE_ATTR_RO(cc2);
+
+static ssize_t pd_rev_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	struct typec_port *p = to_typec_port(dev);
+
+	return sprintf(buf, "%s\n", typec_pd_rev[p->pd_rev]);
+}
+static DEVICE_ATTR_RO(pd_rev);
+
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+static ssize_t moisture_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	struct typec_port *p = to_typec_port(dev);
+	return sprintf(buf, "%d\n", p->moisture);
+}
+static DEVICE_ATTR_RO(moisture);
+#endif
+#endif	/* CONFIG_LGE_USB_TYPE_C */
+
 static struct attribute *typec_attrs[] = {
 	&dev_attr_data_role.attr,
 	&dev_attr_power_operation_mode.attr,
@@ -1275,6 +1343,14 @@ static struct attribute *typec_attrs[] = {
 	&dev_attr_usb_typec_revision.attr,
 	&dev_attr_vconn_source.attr,
 	&dev_attr_port_type.attr,
+#ifdef CONFIG_LGE_USB_TYPE_C
+	&dev_attr_cc1.attr,
+	&dev_attr_cc2.attr,
+	&dev_attr_pd_rev.attr,
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+	&dev_attr_moisture.attr,
+#endif
+#endif
 	NULL,
 };
 ATTRIBUTE_GROUPS(typec);
@@ -1407,6 +1483,55 @@ void typec_set_pwr_opmode(struct typec_port *port,
 	}
 }
 EXPORT_SYMBOL_GPL(typec_set_pwr_opmode);
+
+#ifdef CONFIG_LGE_USB_TYPE_C
+void typec_set_partner_cc_status(struct typec_port *port,
+				 enum typec_partner_cc_status cc1,
+				 enum typec_partner_cc_status cc2)
+{
+	if ((port->partner_cc1 == cc1) && (port->partner_cc2 == cc2))
+		return;
+
+	if (port->partner_cc1 != cc1) {
+		port->partner_cc1 = cc1;
+		sysfs_notify(&port->dev.kobj, NULL, "cc1");
+	}
+
+	if (port->partner_cc2 != cc2) {
+		port->partner_cc2 = cc2;
+		sysfs_notify(&port->dev.kobj, NULL, "cc2");
+	}
+
+	kobject_uevent(&port->dev.kobj, KOBJ_CHANGE);
+}
+EXPORT_SYMBOL_GPL(typec_set_partner_cc_status);
+
+void typec_set_pd_rev(struct typec_port *port, enum typec_pd_rev pd_rev)
+{
+	if (port->pd_rev == pd_rev)
+		return;
+
+	port->pd_rev = pd_rev;
+
+	sysfs_notify(&port->dev.kobj, NULL, "pd_rev");
+	kobject_uevent(&port->dev.kobj, KOBJ_CHANGE);
+}
+EXPORT_SYMBOL_GPL(typec_set_pd_rev);
+
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+void typec_set_moisture(struct typec_port *port, u32 moisture)
+{
+	if (port->moisture == moisture)
+		return;
+
+	port->moisture = moisture;
+
+	sysfs_notify(&port->dev.kobj, NULL, "moisture");
+	kobject_uevent(&port->dev.kobj, KOBJ_CHANGE);
+}
+EXPORT_SYMBOL_GPL(typec_set_moisture);
+#endif
+#endif
 
 /**
  * typec_find_port_power_role - Get the typec port power capability

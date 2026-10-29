@@ -18,6 +18,9 @@
 #include "mtu3.h"
 #include "mtu3_debug.h"
 #include "mtu3_trace.h"
+#ifdef CONFIG_LGE_USB
+#include <mt-plat/mtk_boot.h>
+#endif
 
 static int ep_fifo_alloc(struct mtu3_ep *mep, u32 seg_size)
 {
@@ -364,6 +367,14 @@ void mtu3_start(struct mtu3 *mtu)
 	 */
 	if (mtu->max_speed == USB_SPEED_FULL)
 		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
+
+#ifdef CONFIG_LGE_USB
+	if (get_meta_com_type() == META_USB_COM) {
+		mtu->max_speed	= USB_SPEED_FULL;
+		mtu3_setbits(mbase, U3D_SSUSB_U3_CTRL_0P, (SSUSB_U3_PORT_PDN|SSUSB_U3_PORT_DIS));
+		mtu3_clrbits(mbase, U3D_POWER_MANAGEMENT, HS_ENABLE);
+	}
+#endif
 
 	/* Initialize the default interrupts */
 	mtu3_intr_enable(mtu);

@@ -210,7 +210,11 @@ static struct usb_ms_endpoint_descriptor_16 ms_in_desc = {
 #define STRING_FUNC_IDX			0
 
 static struct usb_string midi_string_defs[] = {
+#ifdef CONFIG_LGE_USB_GADGET
+	[STRING_FUNC_IDX].s = "LGE Android Phone",
+#else
 	[STRING_FUNC_IDX].s = "MIDI function",
+#endif
 	{  } /* end of list */
 };
 
@@ -711,6 +715,11 @@ static int f_midi_in_open(struct snd_rawmidi_substream *substream)
 	struct f_midi *midi = substream->rmidi->private_data;
 	struct gmidi_in_port *port;
 
+#ifdef CONFIG_LGE_USB_GADGET
+	if (substream->rmidi->card->shutdown)
+		return -EINVAL;
+#endif
+
 	if (substream->number >= midi->in_ports)
 		return -EINVAL;
 
@@ -725,6 +734,11 @@ static int f_midi_in_close(struct snd_rawmidi_substream *substream)
 {
 	struct f_midi *midi = substream->rmidi->private_data;
 
+#ifdef CONFIG_LGE_USB_GADGET
+	if (substream->rmidi->card->shutdown)
+		return 0;
+#endif
+
 	VDBG(midi, "%s()\n", __func__);
 	return 0;
 }
@@ -732,6 +746,11 @@ static int f_midi_in_close(struct snd_rawmidi_substream *substream)
 static void f_midi_in_trigger(struct snd_rawmidi_substream *substream, int up)
 {
 	struct f_midi *midi = substream->rmidi->private_data;
+
+#ifdef CONFIG_LGE_USB_GADGET
+	if (substream->rmidi->card->shutdown)
+		return;
+#endif
 
 	if (substream->number >= midi->in_ports)
 		return;
@@ -746,6 +765,11 @@ static int f_midi_out_open(struct snd_rawmidi_substream *substream)
 {
 	struct f_midi *midi = substream->rmidi->private_data;
 
+#ifdef CONFIG_LGE_USB_GADGET
+	if (substream->rmidi->card->shutdown)
+		return -EINVAL;
+#endif
+
 	if (substream->number >= MAX_PORTS)
 		return -EINVAL;
 
@@ -758,6 +782,11 @@ static int f_midi_out_close(struct snd_rawmidi_substream *substream)
 {
 	struct f_midi *midi = substream->rmidi->private_data;
 
+#ifdef CONFIG_LGE_USB_GADGET
+	if (substream->rmidi->card->shutdown)
+		return 0;
+#endif
+
 	VDBG(midi, "%s()\n", __func__);
 	return 0;
 }
@@ -765,6 +794,11 @@ static int f_midi_out_close(struct snd_rawmidi_substream *substream)
 static void f_midi_out_trigger(struct snd_rawmidi_substream *substream, int up)
 {
 	struct f_midi *midi = substream->rmidi->private_data;
+
+#ifdef CONFIG_LGE_USB_GADGET
+	if (substream->rmidi->card->shutdown)
+		return;
+#endif
 
 	VDBG(midi, "%s()\n", __func__);
 

@@ -10,6 +10,10 @@
 #include "u_f.h"
 #include "u_os_desc.h"
 
+#ifdef CONFIG_LGE_USB_GADGET
+#include "u_lgeusb.h"
+#endif
+
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
 #include <linux/platform_device.h>
 #include <linux/kdev_t.h>
@@ -188,6 +192,21 @@ static ssize_t gadget_dev_desc_##__name##_show(struct config_item *item, \
 }
 
 
+#ifdef CONFIG_LGE_USB_GADGET
+#define GI_DEVICE_DESC_SIMPLE_W_u8(_name)		\
+static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
+		const char *page, size_t len)		\
+{							\
+	u8 val;						\
+	int ret;					\
+	ret = kstrtou8(page, 0, &val);			\
+	if (ret)					\
+		return ret;				\
+	to_gadget_info(item)->cdev.desc._name = val;	\
+	pr_info("%s: 0x%02X\n", __func__, val);		\
+	return len;					\
+}
+#else
 #define GI_DEVICE_DESC_SIMPLE_W_u8(_name)		\
 static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 		const char *page, size_t len)		\
@@ -200,7 +219,23 @@ static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 	to_gadget_info(item)->cdev.desc._name = val;	\
 	return len;					\
 }
+#endif
 
+#ifdef CONFIG_LGE_USB_GADGET
+#define GI_DEVICE_DESC_SIMPLE_W_u16(_name)	\
+static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
+		const char *page, size_t len)		\
+{							\
+	u16 val;					\
+	int ret;					\
+	ret = kstrtou16(page, 0, &val);			\
+	if (ret)					\
+		return ret;				\
+	to_gadget_info(item)->cdev.desc._name = cpu_to_le16p(&val);	\
+	pr_info("%s: 0x%04X\n", __func__, val); 	\
+	return len;					\
+}
+#else
 #define GI_DEVICE_DESC_SIMPLE_W_u16(_name)	\
 static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 		const char *page, size_t len)		\
@@ -213,6 +248,7 @@ static ssize_t gadget_dev_desc_##_name##_store(struct config_item *item, \
 	to_gadget_info(item)->cdev.desc._name = cpu_to_le16p(&val);	\
 	return len;					\
 }
+#endif
 
 #define GI_DEVICE_DESC_SIMPLE_RW(_name, _type)	\
 	GI_DEVICE_DESC_SIMPLE_R_##_type(_name)	\
@@ -312,6 +348,9 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	struct gadget_info *gi = to_gadget_info(item);
 	char *name;
 	int ret;
+#ifdef CONFIG_LGE_USB_GADGET
+	struct usb_composite_dev *cdev	= &gi->cdev;
+#endif
 
 	if (strlen(page) < len)
 		return -EOVERFLOW;
@@ -342,6 +381,15 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		}
 	}
 	mutex_unlock(&gi->lock);
+#ifdef CONFIG_LGE_USB_GADGET
+	if(gi->composite.gadget_driver.udc_name == NULL) {
+		pr_info("%s [none]\n", __func__);
+	} else {
+		pr_info("%s [%s] VID(0x%04X), PID(0x%04X)\n", __func__,
+				strlen(name) ? name : "none",
+				cdev->desc.idVendor, cdev->desc.idProduct);
+	}
+#endif
 	return len;
 err:
 	kfree(name);
@@ -463,6 +511,9 @@ static int config_usb_cfg_link(
 	/* stash the function until we bind it to the gadget */
 	list_add_tail(&f->list, &cfg->func_list);
 	ret = 0;
+#ifdef CONFIG_LGE_USB_GADGET
+	pr_info("%s [%d:%s]\n", __func__, cfg->c.bConfigurationValue, f->name);
+#endif
 out:
 	mutex_unlock(&gi->lock);
 	return ret;
@@ -1358,6 +1409,11 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 		gi->cdev.desc.iManufacturer = s[USB_GADGET_MANUFACTURER_IDX].id;
 		gi->cdev.desc.iProduct = s[USB_GADGET_PRODUCT_IDX].id;
 		gi->cdev.desc.iSerialNumber = s[USB_GADGET_SERIAL_IDX].id;
+#ifdef CONFIG_LGE_USB_FACTORY
+		if (cdev->desc.idVendor == cpu_to_le16(LGE_USB_VID) &&
+				cdev->desc.idProduct == cpu_to_le16(LGE_USB_FACTORY_PID))
+			cdev->desc.iSerialNumber = 0;
+#endif
 	}
 
 	if (gi->use_os_desc) {
