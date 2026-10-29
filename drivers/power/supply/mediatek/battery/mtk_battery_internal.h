@@ -40,7 +40,11 @@
 /* ============================================================ */
 #define BAT_VOLTAGE_LOW_BOUND 3400
 #define BAT_VOLTAGE_HIGH_BOUND 3450
+#ifdef CONFIG_LGE_PM
+#define LOW_TMP_BAT_VOLTAGE_LOW_BOUND 3200
+#else
 #define LOW_TMP_BAT_VOLTAGE_LOW_BOUND 3350
+#endif
 #define SHUTDOWN_TIME 40
 #define AVGVBAT_ARRAY_SIZE 30
 #define INIT_VOLTAGE 3450
@@ -204,6 +208,7 @@ enum Fg_daemon_cmds {
 	FG_DAEMON_CMD_COMMUNICATION_INT,
 	FG_DAEMON_CMD_SET_BATTERY_CAPACITY,
 	FG_DAEMON_CMD_GET_BH_DATA,
+	FG_DAEMON_CMD_SET_AGING_INFO,
 
 	FG_DAEMON_CMD_FROM_USER_NUMBER
 };
@@ -560,6 +565,8 @@ struct fuel_gauge_custom_data {
 	int power_on_car_nochr;
 	int shutdown_car_ratio;
 
+	int min_uisoc_at_kpoc;
+
 	/* battery health */
 	int aging_diff_max_threshold;
 	int aging_diff_max_level;
@@ -656,9 +663,21 @@ struct battery_data {
 	int BAT_PRESENT;
 	int BAT_TECHNOLOGY;
 	int BAT_CAPACITY;
+#ifdef CONFIG_LGE_PM
+	int BAT_RAW_CAPACITY;
+	int BAT_TTF_CAPACITY;
+#endif
 	/* Add for Battery Service */
 	int BAT_batt_vol;
 	int BAT_batt_temp;
+#ifdef CONFIG_LGE_PM
+	int BAT_CURRENT_MAX;
+	int BAT_VOLTAGE_MAX;
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+	int BAT_CHARGE_FULL;
+	int BAT_CHARGE_FULL_LEVEL;
+#endif
 };
 
 struct BAT_EC_Struct {
@@ -932,6 +951,10 @@ struct mtk_battery {
 	int last_nafg_cnt;
 	struct timespec last_nafg_update_time;
 	bool is_nafg_broken;
+#ifdef CONFIG_LGE_PM
+	int old_pid;
+	int force_restart_daemon;
+#endif
 
 	/* battery temperature table */
 	int no_bat_temp_compensate;
@@ -1042,6 +1065,7 @@ extern void fg_bat_temp_int_internal(void);
 extern void fgauge_get_profile_id(void);
 extern void battery_update(struct battery_data *bat_data);
 extern void fg_custom_init_from_header(void);
+extern void fg_custom_init_from_dts(struct platform_device *dev);
 extern void notify_fg_chr_full(void);
 extern void fg_update_sw_iavg(void);
 extern void fg_bat_temp_int_sw_check(void);

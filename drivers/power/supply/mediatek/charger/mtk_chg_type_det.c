@@ -42,8 +42,17 @@
 #include <mt-plat/v1/mtk_charger.h>
 #include <pmic.h>
 #include <tcpm.h>
+#ifdef CONFIG_LGE_PM
+#include <lge_chg_type.h>
+#endif
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+#include <linux/power/charger_controller.h>
+#endif
 
 #include "mtk_charger_intf.h"
+#ifdef CONFIG_LGE_SAR_CONTROLLER_USB_DETECT
+extern void sar_controller_notify_connect(u32 type, bool is_connected);
+#endif
 
 int check_cable_in;
 struct tag_bootmode {
@@ -116,9 +125,11 @@ static const char * const mtk_chg_type_name[] = {
 	"Charging USB Host",
 	"Non-standard Charger",
 	"Standard Charger",
+	"Apple 2.4A Charger",
 	"Apple 2.1A Charger",
 	"Apple 1.0A Charger",
 	"Apple 0.5A Charger",
+	"Samsung Charger",
 	"Wireless Charger",
 };
 
@@ -130,9 +141,12 @@ static void dump_charger_name(enum charger_type type)
 	case CHARGING_HOST:
 	case NONSTANDARD_CHARGER:
 	case STANDARD_CHARGER:
+	case APPLE_2_4A_CHARGER:
 	case APPLE_2_1A_CHARGER:
 	case APPLE_1_0A_CHARGER:
 	case APPLE_0_5A_CHARGER:
+	case SAMSUNG_CHARGER:
+	case WIRELESS_CHARGER:
 		pr_info("%s: charger type: %d, %s\n", __func__, type,
 			mtk_chg_type_name[type]);
 		break;
@@ -155,6 +169,11 @@ struct mt_charger {
 	struct power_supply_desc usb_desc;
 	struct power_supply_config usb_cfg;
 	struct power_supply *usb_psy;
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	struct power_supply_desc wless_desc;
+	struct power_supply_config wless_cfg;
+	struct power_supply *wless_psy;
+#endif
 	struct chg_type_info *cti;
 	#ifdef CONFIG_EXTCON_USB_CHG
 	struct usb_extcon_info *extcon_info;
@@ -162,10 +181,17 @@ struct mt_charger {
 	#endif
 	bool chg_online; /* Has charger in or not */
 	enum charger_type chg_type;
+#ifdef CONFIG_LGE_PM
+	struct lge_chg_type *lct;
+#endif
 };
 
 static int mt_charger_online(struct mt_charger *mtk_chg)
 {
+#ifdef CONFIG_LGE_PM_CHARGERLOGO
+	/* do not power-off here */
+	return 0;
+#else /* MediaTek */
 	int ret = 0;
 	struct device *dev = NULL;
 	struct device_node *boot_node = NULL;
@@ -202,6 +228,7 @@ static int mt_charger_online(struct mt_charger *mtk_chg)
 	}
 
 	return ret;
+#endif
 }
 
 int mt_check_cable_in(void)
@@ -251,6 +278,31 @@ static int mt_charger_get_property(struct power_supply *psy,
 			break;
 		}
 		break;
+#ifdef CONFIG_LGE_PM
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		val->intval = lge_chg_type_get_current_max(mtk_chg->lct);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+		val->intval = lge_chg_type_get_voltage_max(mtk_chg->lct);
+		break;
+	case POWER_SUPPLY_PROP_FASTCHG:
+		val->intval = lge_chg_type_is_fastchg(mtk_chg->lct);
+		break;
+	case POWER_SUPPLY_PROP_FASTCHG_SUPPORT:
+		val->intval = lge_chg_type_is_fastchg_support(mtk_chg->lct);
+		break;
+	case POWER_SUPPLY_PROP_INCOMPATIBLE_CHG:
+		val->intval = lge_chg_type_is_floated(mtk_chg->lct);
+		break;
+	case POWER_SUPPLY_PROP_VZW_CHG:
+		val->intval = lge_chg_type_get_vzw_chg(mtk_chg->lct);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = 0;
+		if (mtk_chg->chg_type != CHARGER_UNKNOWN)
+			val->intval = battery_get_vbus() * 1000;
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -282,7 +334,11 @@ static int mt_charger_set_property(struct power_supply *psy,
 	struct usb_extcon_info *info;
 	#endif
 
+#ifdef CONFIG_LGE_PM
+	/* delete log */
+#else /* MediaTek */
 	pr_info("%s\n", __func__);
+#endif
 
 	if (!mtk_chg) {
 		pr_notice("%s: no mtk chg data\n", __func__);
@@ -300,6 +356,11 @@ static int mt_charger_set_property(struct power_supply *psy,
 		mt_charger_online(mtk_chg);
 		return 0;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
+#ifdef CONFIG_LGE_PM
+		lge_chg_type_set_property(mtk_chg->lct, psp, val);
+		if (mtk_chg->chg_type == val->intval)
+			return 0;
+#endif
 		mtk_chg->chg_type = val->intval;
 		if (mtk_chg->chg_type != CHARGER_UNKNOWN)
 			charger_manager_force_disable_power_path(
@@ -307,13 +368,40 @@ static int mt_charger_set_property(struct power_supply *psy,
 		else if (!cti->tcpc_kpoc)
 			charger_manager_force_disable_power_path(
 				cti->chg_consumer, MAIN_CHARGER, true);
+
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+		charger_manager_enable_power_path(mtk_chg->cti->chg_consumer,
+				MAIN_CHARGER,
+				!(mtk_chg->chg_type == CHARGER_UNKNOWN));
+#endif
 		break;
 	default:
+#ifdef CONFIG_LGE_PM
+		return lge_chg_type_set_property(mtk_chg->lct, psp, val);
+#else /* MediaTek */
 		return -EINVAL;
+#endif
 	}
 
 	dump_charger_name(mtk_chg->chg_type);
 
+#ifdef CONFIG_LGE_PM
+	if (!cti->ignore_usb) {
+		/* usb */
+		if ((mtk_chg->chg_type == STANDARD_HOST) ||
+			(mtk_chg->chg_type == CHARGING_HOST)) {
+			mt_usb_connect_v1();
+			#ifdef CONFIG_EXTCON_USB_CHG
+			info->vbus_state = 1;
+			#endif
+		} else {
+			mt_usb_disconnect_v1();
+			#ifdef CONFIG_EXTCON_USB_CHG
+			info->vbus_state = 0;
+			#endif
+		}
+	}
+#else /* MediaTek */
 	if (!cti->ignore_usb) {
 		/* usb */
 		if ((mtk_chg->chg_type == STANDARD_HOST) ||
@@ -330,6 +418,7 @@ static int mt_charger_set_property(struct power_supply *psy,
 			#endif
 		}
 	}
+#endif
 
 	queue_work(cti->chg_in_wq, &cti->chg_in_work);
 	#ifdef CONFIG_EXTCON_USB_CHG
@@ -341,8 +430,17 @@ static int mt_charger_set_property(struct power_supply *psy,
 #ifdef CONFIG_MACH_MT6771
 	power_supply_changed(mtk_chg->chg_psy);
 #endif
+#ifdef CONFIG_LGE_SAR_CONTROLLER_USB_DETECT
+	if (mtk_chg->chg_type == CHARGER_UNKNOWN)
+		sar_controller_notify_connect(mtk_chg->chg_type, false);
+	else
+		sar_controller_notify_connect(mtk_chg->chg_type, true);
+#endif
 	power_supply_changed(mtk_chg->ac_psy);
 	power_supply_changed(mtk_chg->usb_psy);
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	power_supply_changed(mtk_chg->wless_psy);
+#endif
 
 	return 0;
 }
@@ -362,10 +460,37 @@ static int mt_ac_get_property(struct power_supply *psy,
 		if ((mtk_chg->chg_type == STANDARD_HOST) ||
 			(mtk_chg->chg_type == CHARGING_HOST))
 			val->intval = 0;
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+		/* Reset to 0 if charger type is Wireless */
+		if (mtk_chg->chg_type == WIRELESS_CHARGER)
+			val->intval = 0;
+#endif
 		break;
+#ifdef CONFIG_LGE_PM
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		val->intval = lge_chg_type_get_current_max(mtk_chg->lct);
+		if ((mtk_chg->chg_type == STANDARD_HOST) ||
+			(mtk_chg->chg_type == CHARGING_HOST))
+			val->intval = 0;
+		if (mtk_chg->chg_type == WIRELESS_CHARGER)
+			val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+		val->intval = lge_chg_type_get_voltage_max(mtk_chg->lct);
+		if ((mtk_chg->chg_type == STANDARD_HOST) ||
+			(mtk_chg->chg_type == CHARGING_HOST))
+			val->intval = 0;
+		if (mtk_chg->chg_type == WIRELESS_CHARGER)
+			val->intval = 0;
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	chgctrl_charger_property_override(psp, val);
+#endif
 
 	return 0;
 }
@@ -383,25 +508,91 @@ static int mt_usb_get_property(struct power_supply *psy,
 		else
 			val->intval = 0;
 		break;
+#ifdef CONFIG_LGE_PM
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		val->intval = lge_chg_type_get_current_max(mtk_chg->lct);
+		if ((mtk_chg->chg_type != STANDARD_HOST) &&
+			(mtk_chg->chg_type != CHARGING_HOST))
+			val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+		val->intval = lge_chg_type_get_voltage_max(mtk_chg->lct);
+		if ((mtk_chg->chg_type != STANDARD_HOST) &&
+			(mtk_chg->chg_type != CHARGING_HOST))
+			val->intval = 0;
+		break;
+#else /* MediaTek */
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		val->intval = 500000;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 		val->intval = 5000000;
 		break;
+#endif
 	default:
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	chgctrl_charger_property_override(psp, val);
+#endif
+
 	return 0;
 }
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+static int mt_wless_get_property(struct power_supply *psy,
+	enum power_supply_property psp, union power_supply_propval *val)
+{
+	struct mt_charger *mtk_chg = power_supply_get_drvdata(psy);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		val->intval = 0;
+		if (mtk_chg->chg_type == WIRELESS_CHARGER)
+			val->intval = 1;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		val->intval = lge_chg_type_get_current_max(mtk_chg->lct);
+		if (mtk_chg->chg_type != WIRELESS_CHARGER)
+			val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+		val->intval = lge_chg_type_get_voltage_max(mtk_chg->lct);
+		if (mtk_chg->chg_type != WIRELESS_CHARGER)
+			val->intval = 0;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	chgctrl_charger_property_override(psp, val);
+#endif
+
+	return 0;
+}
+#endif
+
 static enum power_supply_property mt_charger_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
+#ifdef CONFIG_LGE_PM
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+	POWER_SUPPLY_PROP_FASTCHG,
+	POWER_SUPPLY_PROP_FASTCHG_SUPPORT,
+	POWER_SUPPLY_PROP_INCOMPATIBLE_CHG,
+	POWER_SUPPLY_PROP_VZW_CHG,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+#endif
 };
 
 static enum power_supply_property mt_ac_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
+#ifdef CONFIG_LGE_PM
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+#endif
 };
 
 static enum power_supply_property mt_usb_properties[] = {
@@ -409,6 +600,14 @@ static enum power_supply_property mt_usb_properties[] = {
 	POWER_SUPPLY_PROP_CURRENT_MAX,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
 };
+
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+static enum power_supply_property mt_wless_properties[] = {
+	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+};
+#endif
 
 static void tcpc_power_off_work_handler(struct work_struct *work)
 {
@@ -495,6 +694,9 @@ static int pd_tcp_notifier_call(struct notifier_block *pnb,
 				vbus = battery_get_vbus();
 				pr_info("%s KPOC Plug out, vbus = %d\n",
 					__func__, vbus);
+#ifdef CONFIG_LGE_PM_CHARGERLOGO
+				/* do not power-off here */
+#else /* MediaTek */
 				mtk_chg_ac->chg_type = CHARGER_UNKNOWN;
 				mtk_chg_usb->chg_type = CHARGER_UNKNOWN;
 				power_supply_changed(ac_psy);
@@ -503,9 +705,23 @@ static int pd_tcp_notifier_call(struct notifier_block *pnb,
 					      cti->pwr_off_wq,
 					      &cti->pwr_off_work);
 				break;
+#endif
 			}
 			pr_info("%s USB Plug out\n", __func__);
 			plug_in_out_handler(cti, false, false);
+#ifdef CONFIG_LGE_PM_USB_ID
+		} else if (noti->typec_state.old_state == TYPEC_UNATTACHED &&
+				(noti->typec_state.new_state == TYPEC_ATTACHED_DEBUG ||
+				noti->typec_state.new_state == TYPEC_ATTACHED_DBGACC_SNK)) {
+			pr_info("%s Debug USB Plug in, pol = %d\n", __func__,
+					noti->typec_state.polarity);
+			plug_in_out_handler(cti, true, false);
+		} else if ((noti->typec_state.old_state == TYPEC_ATTACHED_DEBUG ||
+				noti->typec_state.old_state == TYPEC_ATTACHED_DBGACC_SNK)
+				&& noti->typec_state.new_state == TYPEC_UNATTACHED) {
+			pr_info("%s Debug USB Plug out\n", __func__);
+			plug_in_out_handler(cti, false, false);
+#endif
 		} else if (noti->typec_state.old_state == TYPEC_ATTACHED_SRC &&
 			noti->typec_state.new_state == TYPEC_ATTACHED_SNK) {
 			pr_info("%s Source_to_Sink\n", __func__);
@@ -723,6 +939,9 @@ static int mt_charger_probe(struct platform_device *pdev)
 	struct device_node *boot_node = NULL;
 	struct tag_bootmode *tag = NULL;
 	int boot_mode = 11;//UNKNOWN_BOOT
+#ifdef CONFIG_LGE_PM
+	struct lge_chg_type *lct = NULL;
+#endif
 
 	check_cable_in = 0;
 	chr_err("%s: check_cable_in: %d\n", __func__, check_cable_in);
@@ -758,6 +977,15 @@ static int mt_charger_probe(struct platform_device *pdev)
 	mt_chg->usb_desc.get_property = mt_usb_get_property;
 	mt_chg->usb_cfg.drv_data = mt_chg;
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	mt_chg->wless_desc.name = "wireless";
+	mt_chg->wless_desc.type = POWER_SUPPLY_TYPE_WIRELESS;
+	mt_chg->wless_desc.properties = mt_wless_properties;
+	mt_chg->wless_desc.num_properties = ARRAY_SIZE(mt_wless_properties);
+	mt_chg->wless_desc.get_property = mt_wless_get_property;
+	mt_chg->wless_cfg.drv_data = mt_chg;
+#endif
+
 	mt_chg->chg_psy = power_supply_register(&pdev->dev,
 		&mt_chg->chg_desc, &mt_chg->chg_cfg);
 	if (IS_ERR(mt_chg->chg_psy)) {
@@ -785,6 +1013,17 @@ static int mt_charger_probe(struct platform_device *pdev)
 		goto err_usb_psy;
 	}
 
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	mt_chg->wless_psy = power_supply_register(&pdev->dev, &mt_chg->wless_desc,
+		&mt_chg->wless_cfg);
+	if (IS_ERR(mt_chg->wless_psy)) {
+		dev_notice(&pdev->dev, "Failed to register power supply: %ld\n",
+			PTR_ERR(mt_chg->wless_psy));
+		ret = PTR_ERR(mt_chg->wless_psy);
+		goto err_wless_psy;
+	}
+#endif
+
 	cti = devm_kzalloc(&pdev->dev, sizeof(*cti), GFP_KERNEL);
 	if (!cti) {
 		ret = -ENOMEM;
@@ -799,6 +1038,22 @@ static int mt_charger_probe(struct platform_device *pdev)
 		ret = -EINVAL;
 		goto err_get_tcpc_dev;
 	}
+
+#ifdef CONFIG_LGE_PM
+	lct = devm_kzalloc(&pdev->dev, sizeof(*lct), GFP_KERNEL);
+	if (!lct) {
+		ret = -ENOMEM;
+		goto err_get_tcpc_dev;
+	}
+	lct->dev = mt_chg->dev;
+	lct->psy = mt_chg->chg_psy;
+	lct->bc12 = cti->chg_consumer;
+	ret = lge_chg_type_init(lct);
+	if (ret)
+		goto err_lct;
+
+	mt_chg->lct = lct;
+#endif
 
 	dev = &(pdev->dev);
 	if (dev != NULL) {
@@ -869,9 +1124,17 @@ static int mt_charger_probe(struct platform_device *pdev)
 	pr_info("%s done\n", __func__);
 	return 0;
 
+#ifdef CONFIG_LGE_PM
+err_lct:
+	devm_kfree(&pdev->dev, lct);
+#endif
 err_get_tcpc_dev:
 	devm_kfree(&pdev->dev, cti);
 err_no_mem:
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	power_supply_unregister(mt_chg->wless_psy);
+err_wless_psy:
+#endif
 	power_supply_unregister(mt_chg->usb_psy);
 err_usb_psy:
 	power_supply_unregister(mt_chg->ac_psy);
@@ -888,6 +1151,9 @@ static int mt_charger_remove(struct platform_device *pdev)
 	power_supply_unregister(mt_charger->chg_psy);
 	power_supply_unregister(mt_charger->ac_psy);
 	power_supply_unregister(mt_charger->usb_psy);
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	power_supply_unregister(mt_charger->wless_psy);
+#endif
 
 	pr_info("%s\n", __func__);
 	if (cti->chgdet_task) {
@@ -908,6 +1174,10 @@ static int mt_charger_suspend(struct device *dev)
 
 static int mt_charger_resume(struct device *dev)
 {
+#ifdef CONFIG_LGE_PM
+	/* do not need to notify */
+	return 0;
+#else /* MediaTek */
 	struct platform_device *pdev = to_platform_device(dev);
 	struct mt_charger *mt_charger = platform_get_drvdata(pdev);
 
@@ -919,8 +1189,12 @@ static int mt_charger_resume(struct device *dev)
 	power_supply_changed(mt_charger->chg_psy);
 	power_supply_changed(mt_charger->ac_psy);
 	power_supply_changed(mt_charger->usb_psy);
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	power_supply_changed(mt_charger->wless_psy);
+#endif
 
 	return 0;
+#endif
 }
 #endif
 
@@ -943,14 +1217,34 @@ static struct platform_driver mt_charger_driver = {
 };
 
 /* Legacy api to prevent build error */
+#ifdef CONFIG_LGE_PM
+static struct power_supply *mt_get_charger_psy(void)
+{
+	static struct power_supply *psy = NULL;
+
+	if (!psy)
+		psy = power_supply_get_by_name("charger");
+
+	return psy;
+}
+#endif
+
 bool upmu_is_chr_det(void)
 {
 	struct mt_charger *mtk_chg = NULL;
+#ifdef CONFIG_LGE_PM
+	struct power_supply *psy = mt_get_charger_psy();
+#else /* MediaTek */
 	struct power_supply *psy = power_supply_get_by_name("charger");
+#endif
 
 	if (!psy) {
 		pr_info("%s: get power supply failed\n", __func__);
+#ifdef CONFIG_LGE_PM
+		return false;
+#else /* MediaTek */
 		return -EINVAL;
+#endif
 	}
 	mtk_chg = power_supply_get_drvdata(psy);
 	return mtk_chg->chg_online;
@@ -969,11 +1263,19 @@ bool pmic_chrdet_status(void)
 enum charger_type mt_get_charger_type(void)
 {
 	struct mt_charger *mtk_chg = NULL;
+#ifdef CONFIG_LGE_PM
+	struct power_supply *psy = mt_get_charger_psy();
+#else /* MediaTek */
 	struct power_supply *psy = power_supply_get_by_name("charger");
+#endif
 
 	if (!psy) {
 		pr_info("%s: get power supply failed\n", __func__);
+#ifdef CONFIG_LGE_PM
+		return CHARGER_UNKNOWN;
+#else /* MediaTek */
 		return -EINVAL;
+#endif
 	}
 	mtk_chg = power_supply_get_drvdata(psy);
 	return mtk_chg->chg_type;
@@ -982,14 +1284,26 @@ enum charger_type mt_get_charger_type(void)
 bool mt_charger_plugin(void)
 {
 	struct mt_charger *mtk_chg = NULL;
+#ifdef CONFIG_LGE_PM
+	struct power_supply *psy = mt_get_charger_psy();
+#else /* MediaTek */
 	struct power_supply *psy = power_supply_get_by_name("charger");
+#endif
 	struct chg_type_info *cti = NULL;
 
 	if (!psy) {
 		pr_info("%s: get power supply failed\n", __func__);
+#ifdef CONFIG_LGE_PM
+		return false;
+#else /* MediaTek */
 		return -EINVAL;
+#endif
 	}
 	mtk_chg = power_supply_get_drvdata(psy);
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	if (mtk_chg->chg_type == WIRELESS_CHARGER)
+		return mtk_chg->chg_online;
+#endif
 	cti = mtk_chg->cti;
 	pr_info("%s plugin:%d\n", __func__, cti->plugin);
 
@@ -1038,6 +1352,9 @@ static int __init mt_charger_det_notifier_call_init(void)
 			  __func__, ret);
 		goto out;
 	}
+#ifdef CONFIG_LGE_PM
+	mt_chg->lct->tcpc = cti->tcpc;
+#endif
 	pr_info("%s done\n", __func__);
 out:
 	power_supply_put(psy);

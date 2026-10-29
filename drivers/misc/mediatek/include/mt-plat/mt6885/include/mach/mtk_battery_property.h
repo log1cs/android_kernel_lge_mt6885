@@ -1,7 +1,16 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2019 MediaTek Inc.
-*/
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
 
 #ifndef _MTK_BATTERY_PROPERTY_H
 #define _MTK_BATTERY_PROPERTY_H
@@ -68,7 +77,7 @@
 #define DIFFERENCE_FULL_CV 1000 /*0.01%*/
 #define PSEUDO1_EN 1
 #define PSEUDO100_EN 1
-#define PSEUDO100_EN_DIS 1
+#define PSEUDO100_EN_DIS 0
 
 #define DIFF_SOC_SETTING 50	/* 0.01% */
 #define DIFF_BAT_TEMP_SETTING 1
@@ -92,7 +101,7 @@
 #define CALI_CAR_TUNE_AVG_NUM	60
 
 /* Aging Compensation 1*/
-#define AGING_FACTOR_MIN 75
+#define AGING_FACTOR_MIN 90
 #define AGING_FACTOR_DIFF 10
 #define DIFFERENCE_VOLTAGE_UPDATE 50
 #define AGING_ONE_EN 1
@@ -108,9 +117,9 @@
 
 /* Aging Compensation 3*/
 #define AGING_THIRD_EN 1
-#define AGING_4_EN 1
-#define AGING_5_EN 1
-#define AGING_6_EN 1
+#define AGING_4_EN 0
+#define AGING_5_EN 0
+#define AGING_6_EN 0
 
 #define AGING4_UPDATE_SOC 40
 #define AGING4_LOAD_SOC 70
@@ -196,11 +205,12 @@
 #define BATTERY_TMP_TO_ENABLE_NAFG -20
 /* #define GM30_DISABLE_NAFG */
 
-#define POWER_ON_CAR_CHR	5
+#define POWER_ON_CAR_CHR	150
 #define POWER_ON_CAR_NOCHR	-35
 
 #define SHUTDOWN_CAR_RATIO	1
 
+#define MIN_UISOC_AT_KPOC	100 /* 0.01% */
 
 #define MULTI_TEMP_GAUGE0 1	/* different temp using different gauge 0% */
 
@@ -251,22 +261,22 @@
 
 /* using voltage to limit uisoc in 1% case */
 /* UI_LOW_LIMIT_VTH0=36000 means 3.6v */
-#define UI_LOW_LIMIT_EN 0
+#define UI_LOW_LIMIT_EN 1
 
 #define UI_LOW_LIMIT_SOC0 200
-#define UI_LOW_LIMIT_VTH0 34500
+#define UI_LOW_LIMIT_VTH0 34000
 
 #define UI_LOW_LIMIT_SOC1 200
-#define UI_LOW_LIMIT_VTH1 34500
+#define UI_LOW_LIMIT_VTH1 34000
 
 #define UI_LOW_LIMIT_SOC2 200
-#define UI_LOW_LIMIT_VTH2 34500
+#define UI_LOW_LIMIT_VTH2 34000
 
 #define UI_LOW_LIMIT_SOC3 200
-#define UI_LOW_LIMIT_VTH3 34500
+#define UI_LOW_LIMIT_VTH3 34000
 
 #define UI_LOW_LIMIT_SOC4 200
-#define UI_LOW_LIMIT_VTH4 34500
+#define UI_LOW_LIMIT_VTH4 34000
 
 #define UI_LOW_LIMIT_TIME 99999
 

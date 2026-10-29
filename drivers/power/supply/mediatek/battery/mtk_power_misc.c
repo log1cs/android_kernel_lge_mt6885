@@ -182,9 +182,13 @@ int set_shutdown_cond(int shutdown_cond)
 		sdc.shutdown_status.is_overheat = true;
 		mutex_unlock(&sdc.lock);
 		bm_err("[%s]OVERHEAT shutdown!\n", __func__);
+#ifdef CONFIG_LGE_PM
+		/* do not power-off here */
+#else /* MediaTek */
 		mutex_lock(&system_transition_mutex);
 		kernel_power_off();
 		mutex_unlock(&system_transition_mutex);
+#endif
 		break;
 	case SOC_ZERO_PERCENT:
 		if (sdc.shutdown_status.is_soc_zero_percent != true) {
@@ -231,11 +235,11 @@ int set_shutdown_cond(int shutdown_cond)
 				sds->is_under_shutdown_voltage = true;
 				for (i = 0; i < AVGVBAT_ARRAY_SIZE; i++)
 					sdc.batdata[i] =
-						VBAT2_DET_VOLTAGE1 / 10;
+						fg_cust_data.vbat2_det_voltage1 / 10;
 				sdc.batidx = 0;
 			}
 			bm_err("LOW_BAT_VOLT:vbat %d %d",
-				vbat, VBAT2_DET_VOLTAGE1 / 10);
+				vbat, fg_cust_data.vbat2_det_voltage1 / 10);
 			mutex_unlock(&sdc.lock);
 		}
 		break;
@@ -302,9 +306,13 @@ static int shutdown_event_handler(struct shutdown_controller *sdd)
 			polling++;
 			if (duraction.tv_sec >= SHUTDOWN_TIME) {
 				bm_err("soc zero shutdown\n");
+#ifdef CONFIG_LGE_PM
+				/* do not power-off here */
+#else /* MediaTek */
 				mutex_lock(&system_transition_mutex);
 				kernel_power_off();
 				mutex_unlock(&system_transition_mutex);
+#endif
 				return next_waketime(polling);
 
 			}
@@ -326,9 +334,13 @@ static int shutdown_event_handler(struct shutdown_controller *sdd)
 			polling++;
 			if (duraction.tv_sec >= SHUTDOWN_TIME) {
 				bm_err("uisoc one percent shutdown\n");
+#ifdef CONFIG_LGE_PM
+				/* do not power-off here */
+#else /* MediaTek */
 				mutex_lock(&system_transition_mutex);
 				kernel_power_off();
 				mutex_unlock(&system_transition_mutex);
+#endif
 				return next_waketime(polling);
 			}
 		} else if (now_current > 0 && current_soc > 0) {
@@ -348,9 +360,13 @@ static int shutdown_event_handler(struct shutdown_controller *sdd)
 		polling++;
 		if (duraction.tv_sec >= SHUTDOWN_TIME) {
 			bm_err("dlpt shutdown\n");
+#ifdef CONFIG_LGE_PM
+			/* do not power-off here */
+#else /* MediaTek */
 			mutex_lock(&system_transition_mutex);
 			kernel_power_off();
 			mutex_unlock(&system_transition_mutex);
+#endif
 			return next_waketime(polling);
 		}
 	}
@@ -378,7 +394,11 @@ static int shutdown_event_handler(struct shutdown_controller *sdd)
 			LOW_TMP_BAT_VOLTAGE_LOW_BOUND,
 			LOW_TEMP_DISABLE_LOW_BAT_SHUTDOWN);
 
+#ifdef CONFIG_LGE_PM
+		if (sdd->avgvbat < (fg_cust_data.shutdown_gauge0_voltage / 10)) {
+#else /* MTK original */
 		if (sdd->avgvbat < BAT_VOLTAGE_LOW_BOUND) {
+#endif
 			/* avg vbat less than 3.4v */
 			sdd->lowbatteryshutdown = true;
 			polling++;
@@ -417,9 +437,13 @@ static int shutdown_event_handler(struct shutdown_controller *sdd)
 				if (duraction.tv_sec >= SHUTDOWN_TIME) {
 					bm_err("low bat shutdown, over %d second\n",
 						SHUTDOWN_TIME);
+#ifdef CONFIG_LGE_PM
+					/* do not power-off here */
+#else /* MediaTek */
 					mutex_lock(&system_transition_mutex);
 					kernel_power_off();
 					mutex_unlock(&system_transition_mutex);
+#endif
 					return next_waketime(polling);
 				}
 			}
@@ -506,9 +530,13 @@ static int power_misc_routine_thread(void *arg)
 			sdd->overheat = false;
 			bm_err("%s battery overheat~ power off\n",
 				__func__);
+#ifdef CONFIG_LGE_PM
+			/* do not power-off here */
+#else /* MediaTek */
 			mutex_lock(&system_transition_mutex);
 			kernel_power_off();
 			mutex_unlock(&system_transition_mutex);
+#endif
 			fix_coverity = 1;
 			return 1;
 		}

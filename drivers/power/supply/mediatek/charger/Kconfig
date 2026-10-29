@@ -227,3 +227,8 @@ config CHARGER_MM8013
 	  Say Y to enable
 	  mm8013 driver.
 	  Set to Yes if MM8013 is used.
+
+config LGE_SAR_CONTROLLER_USB_DETECT
+	bool "LGE_SAR_CONTROLLER_USB_DETECT support"
+	help
+	  Support LGE_SAR_CONTROLLER_USB_DETECT feature

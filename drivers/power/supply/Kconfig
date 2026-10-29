@@ -882,4 +882,6 @@ source "drivers/power/supply/mediatek/battery/Kconfig"
 source "drivers/power/supply/mediatek/charger/Kconfig"
 endif
 
+source "drivers/power/supply/mediatek/lge/Kconfig"
+
 endif # POWER_SUPPLY

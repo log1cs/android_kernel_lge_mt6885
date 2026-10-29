@@ -1,7 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2021 MediaTek Inc.
-*/
+ */
 
 #include <linux/alarmtimer.h>
 #include <linux/delay.h>
@@ -25,7 +25,11 @@
 #define DV2_ITA_INIT		3000	/* mA */
 #define DV2_TA_WDT_MIN		10000	/* ms */
 #define DV2_VTA_GAP_MIN		200	/* mV */
+#ifdef CONFIG_LGE_PM
+#define DV2_VTA_VAR_MIN		104	/* % */
+#else /* RichTek */
 #define DV2_VTA_VAR_MIN		103	/* % */
+#endif
 #define DV2_ITA_TRACKING_GAP	150	/* mA */
 #define DV2_ITA_GAP_WINDOW_SIZE	50
 #define DV2_DVCHG_VBUSALM_GAP	100	/* mV */
@@ -38,7 +42,11 @@
 #define DV2_ITAOCP_RATIO	110
 #define DV2_IBUSUCPF_RECHECK	250	/* mA */
 #define DV2_VBUS_CALI_THRESHOLD	150	/* mV */
+#ifdef CONFIG_LGE_PM
+#define DV2_CV_LOWER_BOUND_GAP	20	/* mV */
+#else /* Mediatek */
 #define DV2_CV_LOWER_BOUND_GAP	50	/* mV */
+#endif
 #define DV2_ALGO_INIT_POLLING_INTERVAL	500	/* ms */
 #define DV2_ALGO_INIT_RETRY_MAX		0
 #define DV2_ALGO_MEASURE_R_RETRY_MAX	3
@@ -150,6 +158,10 @@ struct dv2_algo_desc {
 	const char **support_ta;	/* supported ta name */
 	u32 support_ta_cnt;		/* supported ta count */
 	bool allow_not_check_ta_status;	/* allow not to check ta status */
+#ifdef CONFIG_LGE_PM
+	bool force_enable_swchg;
+	u32 dvchg_convert_ratio_init;	/* initial vout-vbus convert ratio */
+#endif
 };
 
 /* Algorithm related information */
@@ -224,6 +236,9 @@ struct dv2_algo_data {
 	enum dv2_thermal_level tswchg_level;
 	int thermal_throttling;
 	int jeita_vbat_cv;
+#ifdef CONFIG_LGE_PM
+	bool test_mode;
+#endif
 };
 
 /*
@@ -292,6 +307,10 @@ static struct dv2_algo_desc algo_desc_defval = {
 	.vta_cap_max = 11000,
 	.ita_cap_min = 1000,
 	.allow_not_check_ta_status = true,
+#ifdef CONFIG_LGE_PM
+	.force_enable_swchg = false,
+	.dvchg_convert_ratio_init = 210,
+#endif
 };
 
 static inline u32 precise_div(u64 dividend, u64 divisor)
@@ -403,11 +422,18 @@ stop:
 static inline u32 __dv2_vout2vbus(struct dv2_algo_info *info, u32 vout)
 {
 	struct dv2_algo_data *data = info->data;
+
+#ifdef CONFIG_LGE_PM
+	if (!data->is_dvchg_en[DV2_DVCHG_MASTER])
+		return vout * info->desc->dvchg_convert_ratio_init / 100;
+	return vout * (DV2_DVCHG_STARTUP_CONVERT_RATIO - 5) / 100;
+#else /* RichTek */
 	u32 ratio = data->is_dvchg_en[DV2_DVCHG_MASTER] ?
 		DV2_DVCHG_CHARGING_CONVERT_RATIO :
 		DV2_DVCHG_STARTUP_CONVERT_RATIO;
 
 	return percent(vout, ratio);
+#endif
 }
 
 /*
@@ -712,6 +738,9 @@ static inline int __dv2_set_ta_cap_cv(struct dv2_algo_info *info, u32 vta,
 				      u32 ita)
 {
 	int ret, ita_meas_pre, ita_meas_post, vta_meas;
+#ifdef CONFIG_LGE_PM
+	int vta_meas_pre, vta_meas_post;
+#endif
 	struct dv2_algo_data *data = info->data;
 	struct dv2_algo_desc *desc = info->desc;
 	struct prop_chgalgo_ta_auth_data *auth_data = &data->ta_auth_data;
@@ -751,6 +780,9 @@ static inline int __dv2_set_ta_cap_cv(struct dv2_algo_info *info, u32 vta,
 			PCA_ERR("get ta cap by supportive fail(%d)\n", ret);
 			return ret;
 		}
+#ifdef CONFIG_LGE_PM
+		vta_meas_pre = vta_meas;
+#endif
 
 		/* Not to increase vta if it exceeds pwr_lmt */
 		data->ita_pwr_lmt = __dv2_get_ita_pwr_lmt_by_vta(info, vta);
@@ -780,12 +812,23 @@ static inline int __dv2_set_ta_cap_cv(struct dv2_algo_info *info, u32 vta,
 			PCA_ERR("get ta cap by supportive fail(%d)\n", ret);
 			return ret;
 		}
+#ifdef CONFIG_LGE_PM
+		vta_meas_post = vta_meas;
+#endif
 		if (data->is_dvchg_en[DV2_DVCHG_MASTER] &&
+#ifdef CONFIG_LGE_PM
+		    (vta_meas_post > vta_meas_pre) &&
+#endif
 		    (ita_meas_post > ita_meas_pre) &&
 		    (vta > data->vta_setting)) {
+#ifdef CONFIG_LGE_PM
+			vstep_cnt = precise_div(roundup(vta_meas_post - vta_meas_pre, auth_data->vta_step),
+						auth_data->vta_step);	
+#else
 			vstep_cnt = precise_div(max_t(u32, vta, vta_meas) -
 						data->vta_setting,
 						auth_data->vta_step);
+#endif
 			ita_gap = precise_div(ita_meas_post - ita_meas_pre,
 					      vstep_cnt);
 			__dv2_update_ita_gap(info, ita_gap);
@@ -829,7 +872,11 @@ static inline void __dv2_calculate_vbat_ircmp(struct dv2_algo_info *info)
 		PCA_ERR("get ibat fail(%d)\n", ret);
 		return;
 	}
+#ifdef CONFIG_LGE_PM
+	ircmp = div1000((ibat > 0 ? ibat : 0) * data->r_bat);
+#else
 	ircmp = div1000(ibat * data->r_bat);
+#endif
 	/*
 	 * For safety,
 	 * if state is CC_CV, ircmp can only be smaller than previous one
@@ -920,9 +967,15 @@ static inline int __dv2_get_idvchg_lmt(struct dv2_algo_info *info)
 {
 	u32 ita_lmt, idvchg_lmt;
 	struct dv2_algo_data *data = info->data;
+#ifdef CONFIG_LGE_PM
+	struct prop_chgalgo_ta_auth_data *auth_data = &data->ta_auth_data;
+#endif
 
 	ita_lmt = __dv2_get_ita_lmt(info);
 	idvchg_lmt = min(data->idvchg_cc, ita_lmt);
+#ifdef CONFIG_LGE_PM
+	idvchg_lmt = rounddown(idvchg_lmt, auth_data->ita_step);
+#endif
 	PCA_INFO("idvchg_lmt(ita_lmt,idvchg_cc)=%d(%d,%d)\n", idvchg_lmt,
 		 ita_lmt, data->idvchg_cc);
 	return idvchg_lmt;
@@ -1137,11 +1190,33 @@ static int __dv2_set_dvchg_charging(struct dv2_algo_info *info, bool en)
 	PCA_INFO("en = %d\n", en);
 
 	if (en) {
+#ifdef CONFIG_LGE_PM
+		if (info->desc->force_enable_swchg) {
+			ret = prop_chgalgo_enable_charging(data->pca_swchg, false);
+			if (ret < 0) {
+				PCA_ERR("disable swchg fail(%d)\n", ret);
+				return ret;
+			}
+			ret = prop_chgalgo_enable_hz(data->pca_swchg, false);
+			if (ret < 0) {
+				PCA_ERR("set swchg hz fail(%d)\n", ret);
+				return ret;
+			}
+		} else {
+			ret = prop_chgalgo_enable_hz(data->pca_swchg, true);
+			if (ret < 0) {
+				PCA_ERR("set swchg hz fail(%d)\n", ret);
+				return ret;
+			}
+		}
+#else /* Ricktek */
 		ret = prop_chgalgo_enable_hz(data->pca_swchg, true);
 		if (ret < 0) {
 			PCA_ERR("set swchg hz fail(%d)\n", ret);
 			return ret;
 		}
+#endif
+
 		ret = __dv2_set_dvchg_protection(info, false);
 		if (ret < 0) {
 			PCA_ERR("set protection fail(%d)\n", ret);
@@ -1186,11 +1261,20 @@ static int __dv2_enable_swchg_charging(struct dv2_algo_info *info, bool en)
 			return ret;
 		}
 	} else {
+#ifdef CONFIG_LGE_PM
+		ret = prop_chgalgo_enable_hz(data->pca_swchg,
+				desc->force_enable_swchg ? false : true);
+		if (ret < 0) {
+			PCA_ERR("set hz fail(%d)\n", ret);
+			return ret;
+		}
+#else /* Richtek */
 		ret = prop_chgalgo_enable_hz(data->pca_swchg, true);
 		if (ret < 0) {
 			PCA_ERR("disable hz fail(%d)\n", ret);
 			return ret;
 		}
+#endif
 		ret = prop_chgalgo_enable_charging(data->pca_swchg, false);
 		if (ret < 0) {
 			PCA_ERR("en swchg fail(%d)\n", ret);
@@ -1457,6 +1541,14 @@ static inline int __dv2_start(struct dv2_algo_info *info)
 		}
 	}
 
+#ifdef CONFIG_LGE_PM
+	if (data->test_mode) {
+		PCA_ERR("dv2 algo is in test mode. bypass measure ita\n");
+		data->idvchg_ss_init = desc->idvchg_ss_init;
+		goto start;
+	}
+#endif
+
 	data->idvchg_ss_init = desc->idvchg_ss_init;
 	ret = prop_chgalgo_set_aicr(data->pca_swchg, 3000);
 	if (ret < 0) {
@@ -1500,6 +1592,9 @@ static inline int __dv2_start(struct dv2_algo_info *info)
 	}
 	/* Update idvchg_ss_init */
 	if (ita >= auth_data->ita_min) {
+#ifdef CONFIG_LGE_PM
+		ita = roundup(ita, auth_data->ita_step);
+#endif
 		PCA_INFO("set idvchg_ss_init(%d)->(%d)\n", desc->idvchg_ss_init,
 			 ita);
 		data->idvchg_ss_init = ita;
@@ -1511,8 +1606,11 @@ start:
 		PCA_ERR("disable charger fail\n");
 		return ret;
 	}
+#ifdef CONFIG_LGE_PM
+	/* do not need to wait here */
+#else /* RichTek */
 	msleep(1000); /* wait for battery to recovery */
-
+#endif
 	/* Check DVCHG registers stat first */
 	for (i = DV2_DVCHG_MASTER; i < DV2_DVCHG_MAX; i++) {
 		if (!data->pca_dvchg[i])
@@ -1675,7 +1773,7 @@ static int __dv2_algo_init_with_ta_cv(struct dv2_algo_info *info)
 	/* Change charging policy first */
 	ret = __dv2_enable_ta_charging(info, true, DV2_VTA_INIT, DV2_ITA_INIT);
 	if (ret < 0) {
-		PCA_ERR("enable ta charge fail(%d)\n", ret);
+		PCA_ERR("enable ta direct charge fail(%d)\n", ret);
 		sinfo.hardreset_ta = true;
 		goto err;
 	}
@@ -1704,7 +1802,11 @@ static int __dv2_algo_init_with_ta_cv(struct dv2_algo_info *info)
 		PCA_ERR("set swchg hz fail(%d)\n", ret);
 		goto err;
 	}
+#ifdef CONFIG_LGE_PM
+	/* do not need to wait */
+#else /* RichTek */
 	msleep(500); /* Wait current stable */
+#endif
 
 	ret = __dv2_get_adc(info, PCA_ADCCHAN_VBUS, &vbus);
 	if (ret < 0) {
@@ -1724,6 +1826,9 @@ static int __dv2_algo_init_with_ta_cv(struct dv2_algo_info *info)
 
 	/* Adjust VBUS to make sure DVCHG can be turned on */
 	vta = __dv2_vout2vbus(info, vout);
+#ifdef CONFIG_LGE_PM
+	vta = roundup(vta, auth_data->vta_step);
+#endif
 	ret = __dv2_set_ta_cap_cv(info, vta, data->idvchg_ss_init);
 	if (ret < 0) {
 		PCA_ERR("set ta cap fail(%d)\n", ret);
@@ -1745,6 +1850,14 @@ static int __dv2_algo_init_with_ta_cv(struct dv2_algo_info *info)
 			goto err;
 		}
 	}
+
+#ifdef CONFIG_LGE_PM
+	if (data->test_mode) {
+		PCA_ERR("dv2 algo is in test mode. "
+			"bypass measuring vbus/vbat\n");
+		goto start_dvchg;
+	}
+#endif
 
 	for (i = 0; i < avg_times; i++) {
 		if (auth_data->support_meas_cap) {
@@ -1787,6 +1900,9 @@ static int __dv2_algo_init_with_ta_cv(struct dv2_algo_info *info)
 		}
 	}
 
+#ifdef CONFIG_LGE_PM
+start_dvchg:
+#endif
 	ret = __dv2_set_dvchg_charging(info, true);
 	if (ret < 0) {
 		PCA_ERR("en dvchg fail\n");
@@ -2519,10 +2635,21 @@ cc_cv:
 	    vta == auth_data->vcap_max)
 		data->state = DV2_ALGO_CC_CV;
 	else {
+#ifdef CONFIG_LGE_PM
+		unsigned int step = (idvchg_lmt - data->ita_measure)
+				/ ita_gap_per_vstep;
+
+		vta += (auth_data->vta_step * step);
+		vta = min_t(u32, vta, auth_data->vcap_max);
+		ita += (ita_gap_per_vstep * step);
+		ita = roundup(ita, auth_data->ita_step);
+		ita = min(ita, idvchg_lmt);
+#else /* RichTek */
 		vta += auth_data->vta_step;
 		vta = min_t(u32, vta, auth_data->vcap_max);
 		ita += ita_gap_per_vstep;
 		ita = min(ita, idvchg_lmt);
+#endif
 	}
 
 out_set_cap:
@@ -2963,9 +3090,16 @@ static bool __dv2_check_ta_ibusocp(struct dv2_algo_info *info,
 	if (data->ita_measure > itaocp) {
 		PCA_ERR("ita(%dmA) > itaocp(%dmA)\n", data->ita_measure,
 			itaocp);
+#ifdef CONFIG_LGE_PM
+		/* double confirm using dvchg */
+		if (__dv2_check_dvchg_ibusocp(info, sinfo))
+			return true;
+#else /* RichTek */
 		/* double confirm using dvchg */
 		if (!__dv2_check_dvchg_ibusocp(info, sinfo))
-			goto err;
+			return true;
+#endif
+		goto err;
 	}
 	return true;
 
@@ -3032,9 +3166,16 @@ static bool __dv2_check_ibatocp(struct dv2_algo_info *info,
 	int ret, ibat;
 	struct dv2_algo_data *data = info->data;
 	u32 ibatocp;
+#ifdef CONFIG_LGE_PM
+	int acc = 0;
+#endif
 
 	if (!data->is_dvchg_en[DV2_DVCHG_MASTER])
 		return true;
+#ifdef CONFIG_LGE_PM
+	prop_chgalgo_get_adc_accuracy(data->pca_dvchg[DV2_DVCHG_MASTER],
+			PCA_ADCCHAN_IBAT, &acc, &acc);
+#endif
 	ibatocp =  __dv2_get_ibatocp(info, data->ita_setting);
 	ret = __dv2_get_adc(info, PCA_ADCCHAN_IBAT, &ibat);
 	if (ret < 0) {
@@ -3042,10 +3183,19 @@ static bool __dv2_check_ibatocp(struct dv2_algo_info *info,
 		return false;
 	}
 	PCA_INFO("ibat(%dmA), ibatocp(%dmA)\n", ibat, ibatocp);
+#ifdef CONFIG_LGE_PM
+	if (ibat < 0)
+		return true;
+	if (ibat - acc > ibatocp) {
+		PCA_ERR("ibat(%dmA) > ibatocp(%dmA)\n", ibat, ibatocp);
+		return false;
+	}
+#else /* RichTek */
 	if (ibat > ibatocp) {
 		PCA_ERR("ibat(%dmA) > ibatocp(%dmA)\n", ibat, ibatocp);
 		return false;
 	}
+#endif
 	return true;
 }
 
@@ -3655,12 +3805,21 @@ static int __dv2_algo_threadfn(void *param)
 		if (atomic_read(&data->stop_algo))
 			__dv2_stop(info, &sinfo);
 		__dv2_pre_handle_notify_evt(info);
+#ifdef CONFIG_LGE_PM
+		if (data->state == DV2_ALGO_CC_CV) {
+			__dv2_algo_check_charging_time(info);
+			__dv2_calculate_vbat_ircmp(info);
+			__dv2_select_vbat_cv(info);
+			__dv2_dump_charging_info(info);
+		}
+#else /* RichTek */
 		if (data->state != DV2_ALGO_STOP) {
 			__dv2_algo_check_charging_time(info);
 			__dv2_calculate_vbat_ircmp(info);
 			__dv2_select_vbat_cv(info);
 			__dv2_dump_charging_info(info);
 		}
+#endif
 		switch (data->state) {
 		case DV2_ALGO_INIT:
 			__dv2_algo_init(info);
@@ -3982,6 +4141,40 @@ static int dv2_set_jeita_vbat_cv(struct prop_chgalgo_device *pca, int mV)
 	return 0;
 }
 
+#ifdef CONFIG_LGE_PM
+static int dv2_set_test_mode(struct prop_chgalgo_device *pca, bool test_mode)
+{
+	struct dv2_algo_info *info = prop_chgalgo_get_drvdata(pca);
+	struct dv2_algo_data *data = info->data;
+
+	PCA_INFO("test mode %s\n", test_mode ? "set": "unset");
+	mutex_lock(&data->ext_lock);
+	if (data->test_mode == test_mode) {
+		mutex_unlock(&data->ext_lock);
+		return 0;
+	}
+	data->test_mode = test_mode;
+	mutex_unlock(&data->ext_lock);
+	return 0;
+}
+
+static bool dv2_is_algo_charging(struct prop_chgalgo_device *pca)
+{
+	struct dv2_algo_info *info = prop_chgalgo_get_drvdata(pca);
+	struct dv2_algo_data *data = info->data;
+	enum dv2_algo_state state;
+
+	mutex_lock(&data->lock);
+	state = data->state;
+	mutex_unlock(&data->lock);
+
+	if (state == DV2_ALGO_SS_DVCHG || state == DV2_ALGO_CC_CV)
+		return true;
+
+	return false;
+}
+#endif
+
 static struct prop_chgalgo_algo_ops pca_dv2_ops = {
 	.init_algo = dv2_init_algo,
 	.is_algo_ready = dv2_is_algo_ready,
@@ -3992,6 +4185,10 @@ static struct prop_chgalgo_algo_ops pca_dv2_ops = {
 	.notifier_call = dv2_notifier_call,
 	.thermal_throttling = dv2_thermal_throttling,
 	.set_jeita_vbat_cv = dv2_set_jeita_vbat_cv,
+#ifdef CONFIG_LGE_PM
+	.set_test_mode = dv2_set_test_mode,
+	.is_algo_charging = dv2_is_algo_charging,
+#endif
 };
 static SIMPLE_PCA_ALGO_DESC(pca_algo_dv2, pca_dv2_ops);
 
@@ -4090,6 +4287,9 @@ static const struct dv2_dtprop dv2_dtprops_u32[] = {
 	DV2_DT_VALPROP(vta_cap_min),
 	DV2_DT_VALPROP(vta_cap_max),
 	DV2_DT_VALPROP(ita_cap_min),
+#ifdef CONFIG_LGE_PM
+	DV2_DT_VALPROP(dvchg_convert_ratio_init),
+#endif
 };
 
 static const struct dv2_dtprop dv2_dtprops_u32_array[] = {
@@ -4154,6 +4354,10 @@ static int dv2_parse_dt(struct dv2_algo_info *info)
 		PCA_INFO("support ta(%s)\n", desc->support_ta[i]);
 	}
 
+#ifdef CONFIG_LGE_PM
+	desc->force_enable_swchg = of_property_read_bool(np,
+			"force_enable_swchg");
+#endif
 	desc->allow_not_check_ta_status =
 		of_property_read_bool(np, "allow_not_check_ta_status");
 	dv2_parse_dt_u32(np, (void *)desc, dv2_dtprops_u32,

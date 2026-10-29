@@ -514,6 +514,32 @@ static struct device_attribute power_supply_attrs[] = {
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
 	POWER_SUPPLY_ATTR(charge_charger_state),
+#ifdef CONFIG_LGE_PM
+	POWER_SUPPLY_ATTR(fastchg),
+	POWER_SUPPLY_ATTR(fastchg_support),
+	POWER_SUPPLY_ATTR(first_soc_est_done),
+	POWER_SUPPLY_ATTR(incompatible_chg),
+	POWER_SUPPLY_ATTR(vzw_chg),
+	POWER_SUPPLY_ATTR(raw_capacity),
+	POWER_SUPPLY_ATTR(ttf_capacity),
+#endif
+#ifdef CONFIG_LGE_PM_CHARGER_CONTROLLER
+	POWER_SUPPLY_ATTR(usb_current_max),
+	POWER_SUPPLY_ATTR(store_demo_enabled),
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_ID
+	POWER_SUPPLY_ATTR(batt_id),
+	POWER_SUPPLY_ATTR(valid_batt_id),
+	POWER_SUPPLY_ATTR(check_batt_id_for_aat),
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_CYCLE
+	POWER_SUPPLY_ATTR(battery_cycle),
+#endif
+#ifdef CONFIG_LGE_PM_BATTERY_AGING_FACTOR
+	POWER_SUPPLY_ATTR(battery_age),
+	POWER_SUPPLY_ATTR(battery_age_level),
+	POWER_SUPPLY_ATTR(battery_condition),
+#endif
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),
 	POWER_SUPPLY_ATTR(ptmc_id),

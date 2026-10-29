@@ -1,16 +1,21 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2019 MediaTek Inc.
-*/
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
 
 #ifndef _MTK_BATTERY_TABLE_H
 #define _MTK_BATTERY_TABLE_H
 
-#if defined(CONFIG_MACH_MT6893) || defined(CONFIG_MACH_MT6885)
-#include "v1/mtk_battery.h"
-#else
 #include "mtk_battery.h"
-#endif
 
 #ifndef _DEA_MODIFY_
 #else
@@ -191,7 +196,9 @@ int g_temperature[MAX_TABLE] = {
 	-45/*TEMPERATURE_T9*/
 };
 
-
+#ifdef CONFIG_LGE_PM_BATTERY_NTC_TUNED
+#include <custom_battery_table.h>
+#else /* MediaTek */
 #define BAT_NTC_10 1
 #define BAT_NTC_47 0
 
@@ -258,7 +265,7 @@ struct FUELGAUGE_TEMPERATURE Fg_Temperature_Table[21] = {
 		{60, 11210}
 };
 #endif
-
+#endif /* CONFIG_LGE_PM_BATTERY_NTC_TUNED */
 
 
 /* ============================================================
