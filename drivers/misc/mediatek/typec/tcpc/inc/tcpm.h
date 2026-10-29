@@ -301,6 +301,12 @@ struct tcp_ny_cable_type {
 	enum tcpc_cable_type type;
 };
 
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+struct tcp_ny_moisture_state {
+	int status;
+};
+#endif
+
 struct tcp_notify {
 	union {
 		struct tcp_ny_enable_state en_state;
@@ -319,6 +325,9 @@ struct tcp_notify {
 		struct tcp_ny_request_bat request_bat;
 		struct tcp_ny_wd_status wd_status;
 		struct tcp_ny_cable_type cable_type;
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+		struct tcp_ny_moisture_state m_status;
+#endif
 	};
 };
 

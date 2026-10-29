@@ -2438,13 +2438,14 @@ static int mt6360_tcpcdev_init(struct mt6360_chip *chip, struct device *dev)
 #endif	/* CONFIG_TCPC_VCONN_SUPPLY_MODE */
 
 #ifdef CONFIG_LGE_USB_TYPE_C
-	desc->vconn_gpio = of_get_named_gpio(np, "vconn_gpio", 0);
-	if (desc->vconn_gpio < 0) {
-		MT6360_ERR("%s no vconn_gpio %d\n",
-			__func__, desc->vconn_gpio);
-		return -EINVAL;
+	desc->vconn_gpio = of_get_named_gpio(np, "mt-tcpc,vconn_gpio", 0);
+	pr_err("%s: vconn_gpio [%d]\n", __func__, desc->vconn_gpio);
+	if (gpio_is_valid(desc->vconn_gpio)) {
+		gpio_direction_output(desc->vconn_gpio, 0);
+		pr_info("%s: vconn_gpio set LOW\n", __func__);
+	} else {
+		pr_err("%s: vconn_gpio is invalid\n", __func__);
 	}
-	gpio_direction_output(desc->vconn_gpio, 0);
 #endif
 
 	of_property_read_string(np, "mt-tcpc,name", (char const **)&name);

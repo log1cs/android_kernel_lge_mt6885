@@ -200,6 +200,8 @@ enum TYPEC_CONNECTION_STATE {
 	typec_audioaccessory,
 #ifdef CONFIG_TYPEC_CAP_DBGACC
 	typec_debugaccessory,
+#else	/* CONFIG_LGE_USB_TYPE_C for factory cable */
+	typec_debugaccessory,
 #endif	/* CONFIG_TYPEC_CAP_DBGACC */
 
 #ifdef CONFIG_TYPEC_CAP_DBGACC_SNK
@@ -254,6 +256,8 @@ static const char *const typec_state_name[] = {
 
 	"AudioAccessory",
 #ifdef CONFIG_TYPEC_CAP_DBGACC
+	"DebugAccessory",
+#else	/* CONFIG_LGE_USB_TYPE_C for factory cable */
 	"DebugAccessory",
 #endif	/* CONFIG_TYPEC_CAP_DBGACC */
 
