@@ -10,7 +10,7 @@
 #include <linux/phy/phy.h>
 
 #include <linux/phy/mediatek/mtk_usb_phy.h>
-#include <phy-mtk.h>
+#include "phy-mtk.h"
 
 #define DRIVER_NAME "mtk_phy"
 
@@ -216,6 +216,27 @@ int usb_mtkphy_dpdm_pulldown(struct phy *phy, bool enable)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(usb_mtkphy_dpdm_pulldown);
+
+int usb_mtkphy_dpdm_pullup(struct phy *phy, bool enable)
+{
+	int ret = 0;
+	struct mtk_phy_instance *instance;
+	const struct mtk_phy_interface *phycfg;
+
+	if (!phy)
+		return -EINVAL;
+
+	instance = phy_get_drvdata(phy);
+	phycfg = instance->phycfg;
+
+	if (phycfg && phycfg->usb_phy_dpdm_pullup)
+		phycfg->usb_phy_dpdm_pullup(instance, enable);
+	else
+		ret = -ENOTSUPP;
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(usb_mtkphy_dpdm_pullup);
 
 int usb_mtkphy_lpm_enable(struct phy *phy, bool on)
 {
