@@ -82,15 +82,15 @@
 
 
 
-struct dentry *ConfigPara_dbgfs;
-struct CONFIG_RECORD_LIST head_list;
-struct LCM_REG_READ reg_read;
+static struct dentry *ConfigPara_dbgfs;
+static struct CONFIG_RECORD_LIST head_list;
+static struct LCM_REG_READ reg_read;
 
 
-struct drm_device *drm_dev;
-struct drm_crtc *crtc;
-struct mtk_drm_crtc *mtk_crtc;
-struct mtk_ddp_comp *output_comp;
+static struct drm_device *drm_dev;
+static struct drm_crtc *crtc;
+static struct mtk_drm_crtc *mtk_crtc;
+static struct mtk_ddp_comp *output_comp;
 
 
 
