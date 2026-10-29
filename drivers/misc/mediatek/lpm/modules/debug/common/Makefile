@@ -1,8 +1,12 @@
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 MTK_LPM_GS_DUMP_VERSION = $(strip $(subst ",, $(CONFIG_MTK_LPM_GS_DUMP_VERSION)))
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include/power_gs_v1
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/inc/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/mtk_lpm_fs/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/modules/include/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/modules/debug/common/
 
 obj-$(CONFIG_MTK_LPM_DBG_COMMON) += mtk_dbg_fs_common.o
 obj-$(CONFIG_MTK_LPM_DBG_COMMON) += mtk_lpm_timer.o

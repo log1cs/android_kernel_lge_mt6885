@@ -6,6 +6,7 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/inc/
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/modules/include/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/modules/include/mt6885/
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/lpm/modules/debug/mt6885/
 
 obj-y += mt6885_dbg.o
 obj-y += mt6885_dbg_lpm_fs.o
