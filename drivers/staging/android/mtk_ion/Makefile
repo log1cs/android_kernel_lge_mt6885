@@ -11,6 +11,7 @@ obj-$(CONFIG_ION_OF) += ion_of.o
 
 obj-$(CONFIG_MTK_ION) += mtk/
 ccflags-$(CONFIG_MTK_ION)  += -I$(srctree)/drivers/staging/android/mtk_ion/mtk
+ccflags-y += -I$(srctree)/drivers/staging/android/mtk_ion
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/mmp/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
