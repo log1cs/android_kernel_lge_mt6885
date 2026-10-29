@@ -1539,6 +1539,54 @@ enum {
 	FOUR_CELL_CAL_TYPE_ALL         =  0xff
 };
 
+///////////////// TETRACELL_CAL /////////////
+#define CAL_XTC_SIZE	    2266
+#define CAL_SENSORXTC_SIZE	64
+#define CAL_PDXTC_SIZE	    1897
+
+typedef struct cal_xtc_t {
+	MUINT8 data[CAL_XTC_SIZE];
+} cal_xtc_t;
+
+typedef struct cal_sensorxtc_t {
+	MUINT8 data[CAL_SENSORXTC_SIZE];
+} cal_sensorxtc_t;
+
+typedef struct cal_pdxtc_t {
+	MUINT8 data[CAL_PDXTC_SIZE];
+} cal_pdxtc_t;
+
+typedef struct tetracell_cal_data {
+	cal_xtc_t xtc_1;
+	cal_xtc_t xtc_2;
+	cal_sensorxtc_t  sensorxtc;
+	cal_pdxtc_t pdxtc_1;
+	cal_pdxtc_t pdxtc_2;
+
+	MUINT8 reserve;
+} tetracell_cal_data_t;
+
+typedef struct tetracell_cal_format_t {
+	bool flag;
+	MUINT16 start_addr;
+	MUINT16 size;
+	MUINT16 offset;
+	MUINT16 check_addr;
+} tetracell_cal_format_t;
+
+enum CAL_FORM {
+	CAL_XTC_1 = 0,
+	CAL_XTC_2,
+	CAL_SENSORXTC,
+	CAL_PDXTC_1,
+	CAL_PDXTC_2,
+	TETRACELL_CAL_FORM_MAX
+};
+
+/*1794 1793*/
+#define TETRACELL_CAL_SIZE	sizeof(tetracell_cal_data_t)
+///////////////// TETRACELL_CAL /////////////
+
 enum IMGSENSOR_AE_MODE {
 	IMGSENSOR_AE_MODE_SE,
 	IMGSENSOR_AE_MODE_SKIP
