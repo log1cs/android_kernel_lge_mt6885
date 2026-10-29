@@ -11,6 +11,8 @@
 # GNU General Public License for more details.
 #
 
+CFLAGS_mtk_cooler_atm.o := -I$(src)
+
 ifeq ($(CONFIG_MACH_MT6833),y)
 	PDIR = mt6833
 else ifeq ($(CONFIG_MACH_MT6893),y)

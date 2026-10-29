@@ -23,3 +23,5 @@ config MTK_LEGACY_THERMAL_PLATFORM
 	  drivers. Config platform name for your
 	  selection. It's used for legacy thermal
 	  drivers only.
+
+source "drivers/misc/mediatek/thermal/lge/Kconfig"

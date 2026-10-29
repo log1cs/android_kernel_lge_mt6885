@@ -11,6 +11,12 @@
 # GNU General Public License for more details.
 #
 
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
+
 ccflags-y += -I$(srctree)
 ifeq ($(CONFIG_MACH_MT6833),y)
 	PDIR = mt6833
@@ -38,15 +44,15 @@ else
 	PDIR = $(MTK_PLATFORM)
 endif
 THERMAL_CHIP_DRIVER_DIR := $(srctree)/drivers/misc/mediatek/thermal/$(PDIR)
-ccflags-y  += -I$(THERMAL_CHIP_DRIVER_DIR)/inc
-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/include/
-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/thermal/fakeHeader/
-ccflags-y  += -I$(srctree)/drivers/gpu/mediatek/gpufreq/include/
-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/gpu/hal/
-ccflags-y  += -I$(srctree)/drivers/gpu/mediatek/gpufreq/
-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/$(PDIR)
-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/include/
-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/include/gpufreq_v1/
+subdir-ccflags-y  += -I$(THERMAL_CHIP_DRIVER_DIR)/inc
+subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/include/
+subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/thermal/fakeHeader/
+subdir-ccflags-y  += -I$(srctree)/drivers/gpu/mediatek/gpufreq/include/
+subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/gpu/hal/
+subdir-ccflags-y  += -I$(srctree)/drivers/gpu/mediatek/gpufreq/
+subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/$(PDIR)
+subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/include/
+subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/include/gpufreq_v1/
 
 obj-y += mtk_thermal_monitor.o
 obj-y += mtk_cooler_shutdown.o
@@ -87,3 +93,4 @@ else
 obj-y += $(subst ",,$(CONFIG_MTK_LEGACY_THERMAL_PLATFORM))/
 
 endif
+obj-$(CONFIG_LGE_PM) += lge/

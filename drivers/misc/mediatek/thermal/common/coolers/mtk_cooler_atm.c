@@ -10,6 +10,7 @@
 #include <linux/platform_device.h>
 #include <linux/types.h>
 #include <linux/proc_fs.h>
+#include <linux/ratelimit.h>
 #include "mt-plat/mtk_thermal_monitor.h"
 #include "mach/mtk_thermal.h"
 #include "mt-plat/mtk_thermal_platform.h"
@@ -3706,6 +3707,7 @@ static void atm_timer_init(void)
 
 static int krtatm_thread(void *arg)
 {
+	static DEFINE_RATELIMIT_STATE(_rs, HZ, 1);
 #ifdef ATM_CFG_PROFILING
 	ktime_t last, delta;
 #endif
@@ -3800,12 +3802,14 @@ static int krtatm_thread(void *arg)
 			/* To confirm if krtatm kthread is really running. */
 			if (krtatm_curr_maxtj >= 100000 ||
 			(krtatm_curr_maxtj - krtatm_prev_maxtj >= 20000)) {
-				tscpu_warn("%s c %d p %d cl %d gl %d s %d\n",
-				__func__, krtatm_curr_maxtj,
-				krtatm_prev_maxtj,
-				adaptive_cpu_power_limit,
-				adaptive_gpu_power_limit,
-				cl_dev_adp_cpu_state_active);
+				if (__ratelimit(&_rs)) {
+					tscpu_warn("%s c %d p %d cl %d gl %d s %d\n",
+					__func__, krtatm_curr_maxtj,
+					krtatm_prev_maxtj,
+					adaptive_cpu_power_limit,
+					adaptive_gpu_power_limit,
+					cl_dev_adp_cpu_state_active);
+				}
 				/* dump more info when atm is deactivated */
 				if (!cl_dev_adp_cpu_state_active) {
 #ifdef CONFIG_MTK_TINYSYS_SSPM_SUPPORT
