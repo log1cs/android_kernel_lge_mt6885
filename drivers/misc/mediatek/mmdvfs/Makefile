@@ -12,6 +12,10 @@
 #
 
 
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+CFLAGS_mmdvfs_pmqos.o := -I$(src)
+CFLAGS_mmqos.o := -I$(src)
+
 ccflags-y += -I$(srctree)/drivers/clk/mediatek
 ccflags-y += -I$(srctree)/drivers/devfreq
 ccflags-y += -I$(srctree)/drivers/gpu/drm/mediatek/
