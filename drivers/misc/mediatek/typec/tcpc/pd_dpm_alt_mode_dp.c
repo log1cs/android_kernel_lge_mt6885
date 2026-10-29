@@ -10,6 +10,10 @@
 #include "inc/pd_dpm_core.h"
 #include "pd_dpm_prv.h"
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+#include <linux/lge_ds3.h>
+#endif
+
 #ifdef CONFIG_USB_POWER_DELIVERY
 #ifdef CONFIG_USB_PD_ALT_MODE
 
@@ -714,6 +718,24 @@ bool dp_dfp_u_notify_attention(struct pd_port *pd_port,
 	return true;
 }
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+void set_ds3_start(bool hallic_state)
+{
+	struct pd_port	*pd_port	= &g_tcpc->pd_port;
+
+	if (hallic_state) {
+		DP_INFO("set_ds3_start: Dualscreen Hallic Connected\n");
+		pd_port->ds3_conn_started	= true;
+		/* startup or call discover_id */
+		//dp_dfp_u_set_state(pd_port, DP_DFP_U_DISCOVER_ID);
+	} else {
+		DP_INFO("set_ds3_start: Dualscreen Hallic Disconnected\n");
+		pd_port->ds3_conn_started	= false;
+		/* set dula role value */
+	}
+}
+EXPORT_SYMBOL(set_ds3_start);
+#endif
 #endif /* CONFIG_USB_PD_ALT_MODE_DFP */
 
 /* DP : UFP_U */

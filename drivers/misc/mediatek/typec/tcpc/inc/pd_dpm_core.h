@@ -54,6 +54,12 @@ void pd_dpm_ufp_request_mode_info(struct pd_port *pd_port);
 void pd_dpm_ufp_request_enter_mode(struct pd_port *pd_port);
 void pd_dpm_ufp_request_exit_mode(struct pd_port *pd_port);
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+extern bool dp_dfp_u_notify_dp_status_update(struct pd_port *pd_port, bool ack);
+extern bool dp_dfp_u_notify_dp_configuration(struct pd_port *pd_port, bool ack);
+void set_ds3_start(bool hallic_state);
+#endif
+
 /* ---- UFP : DP Only ---- */
 
 #ifdef CONFIG_USB_PD_ALT_MODE

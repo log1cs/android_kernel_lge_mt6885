@@ -35,6 +35,9 @@ struct rt_pd_manager_data {
 #ifdef CONFIG_MTK_CHARGER
 	struct charger_device *chg_dev;
 	struct charger_consumer *chg_consumer;
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	struct charger_device *wless_charger;
+#endif
 #ifdef CONFIG_WATER_DETECTION
 	struct power_supply *chg_psy;
 #endif /* CONFIG_WATER_DETECTION */
@@ -92,8 +95,15 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 			rpmd->sink_mv_old = rpmd->sink_mv_new;
 			rpmd->sink_ma_old = rpmd->sink_ma_new;
 #ifdef ADAPT_CHARGER_V1
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+			if (rpmd->sink_mv_new && rpmd->sink_ma_new)
+				charger_dev_enable(rpmd->wless_charger, false);
+			else
+				charger_dev_enable(rpmd->wless_charger, true);
+#else
 			charger_manager_enable_power_path(
 				rpmd->chg_consumer, MAIN_CHARGER, true);
+#endif
 #else
 			if (rpmd->sink_mv_new && rpmd->sink_ma_new) {
 				charger_dev_enable_powerpath(rpmd->chg_dev,
@@ -624,6 +634,11 @@ static int rt_pd_manager_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto err_get_chg_consumer;
 	}
+#ifdef CONFIG_LGE_PM_WIRELESS_CHARGER
+	rpmd->wless_charger = get_charger_by_name("wless_chg");
+	if (!rpmd->wless_charger)
+		pr_info("%s: get wireless charger device failed\n", __func__);
+#endif
 #else
 #ifdef CONFIG_WATER_DETECTION
 	rpmd->chg_psy = power_supply_get_by_name("mtk-master-charger");

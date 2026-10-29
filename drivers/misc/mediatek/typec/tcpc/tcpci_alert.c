@@ -18,6 +18,14 @@
 #include "inc/tcpci_event.h"
 #endif /* CONFIG_USB_POWER_DELIVERY */
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static const char * const tcpm_vbus_level_string[] = {
+	"VBUS_Safe0V(< 0.8V)",
+	"VBUS_Invalid(> 0.8V)",
+	"VBUS_Valid(> 4.5V)",
+};
+#endif
+
 /*
  * [BLOCK] TCPCI IRQ Handler
  */
@@ -120,7 +128,11 @@ static inline int tcpci_alert_power_status_changed_v10(struct tcpc_device *tcpc)
 #endif	/* CONFIG_USB_PD_DIRECT_CHARGE */
 
 	if (show_msg)
+#ifdef CONFIG_LGE_USB_TYPE_C
+		TCPC_INFO("power status changed=[%s]\n", tcpm_vbus_level_string[tcpc->vbus_level]);
+#else
 		TCPC_INFO("ps_change=%d\n", tcpc->vbus_level);
+#endif
 
 	rv = tcpc_typec_handle_ps_change(tcpc, tcpc->vbus_level);
 	if (rv < 0)
@@ -149,7 +161,11 @@ static inline int tcpci_vbus_level_changed(struct tcpc_device *tcpc)
 #endif	/* CONFIG_USB_PD_DIRECT_CHARGE */
 
 	if (show_msg)
+#ifdef CONFIG_LGE_USB_TYPE_C
+		TCPC_INFO("power status changed=[%s]\n", tcpm_vbus_level_string[tcpc->vbus_level]);
+#else
 		TCPC_INFO("ps_change=%d\n", tcpc->vbus_level);
+#endif
 
 	rv = tcpc_typec_handle_ps_change(tcpc, tcpc->vbus_level);
 	if (rv < 0)

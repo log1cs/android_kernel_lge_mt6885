@@ -13,6 +13,19 @@
 /* MTK only */
 #include <mt-plat/mtk_boot.h>
 
+#ifdef CONFIG_LGE_PM_USB_ID
+#include <soc/mediatek/lge/board_lge.h>
+#include <linux/power/lge_usb_id.h>
+#endif
+
+#ifdef CONFIG_LGE_USB
+#include <mt-plat/charger_class.h>
+#endif
+
+#ifdef CONFIG_LGE_DUAL_SCREEN
+#include <linux/lge_ds3.h>
+#endif
+
 #ifdef CONFIG_TYPEC_CAP_TRY_SOURCE
 #define CONFIG_TYPEC_CAP_TRY_STATE
 #endif
@@ -269,6 +282,27 @@ static const char *const typec_state_name[] = {
 };
 #endif /* TYPEC_INFO_ENABLE || TCPC_INFO_ENABLE */
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+static const char * const tcpc_cc_voltage_status_string[] = {
+	"Open",
+	"Ra",
+	"Rd",
+	"Reserved",
+	"Reserved",
+	"Rp-Def",
+	"Rp-1.5",
+	"Rp-3.0",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"Reserved",
+	"DRP Toggling",
+};
+#endif
+
 static inline void typec_transfer_state(struct tcpc_device *tcpc,
 					enum TYPEC_CONNECTION_STATE state)
 {
@@ -524,6 +558,9 @@ static void typec_unattached_power_entry(struct tcpc_device *tcpc)
 	typec_wait_ps_change(tcpc, TYPEC_WAIT_PS_DISABLE);
 
 	if (tcpc->typec_power_ctrl) {
+#ifdef CONFIG_LGE_USB
+		control_otg_en(false);
+#endif
 		tcpci_set_vconn(tcpc, false);
 		tcpci_disable_vbus_control(tcpc);
 		tcpci_report_power_control(tcpc, false);
@@ -706,9 +743,15 @@ static inline void typec_source_attached_entry(struct tcpc_device *tcpc)
 		typec_check_cc2(TYPEC_CC_VOLT_RD));
 
 	tcpci_report_power_control(tcpc, true);
+#ifndef CONFIG_LGE_USB
 	typec_enable_vconn(tcpc);
+#endif
 	tcpci_source_vbus(tcpc,
 			TCP_VBUS_CTRL_TYPEC, TCPC_VBUS_SOURCE_5V, -1);
+#ifdef CONFIG_LGE_USB
+	typec_enable_vconn(tcpc);
+	control_otg_en(true);
+#endif
 }
 
 static inline void typec_sink_attached_entry(struct tcpc_device *tcpc)
@@ -865,6 +908,21 @@ static inline void typec_trywait_snk_pe_entry(struct tcpc_device *tcpc)
 
 	typec_trywait_snk_entry(tcpc);
 }
+
+#ifdef CONFIG_LGE_USB_TYPE_C
+static inline void typec_trywait_snk_vbus_entry(struct tcpc_device *tcpc)
+{
+	TYPEC_NEW_STATE(typec_trywait_snk);
+	typec_wait_ps_change(tcpc, TYPEC_WAIT_PS_DISABLE);
+
+	tcpci_set_vconn(tcpc, false);
+	tcpci_set_cc(tcpc, TYPEC_CC_OPEN);
+	tcpci_source_vbus(tcpc,
+			TCP_VBUS_CTRL_TYPEC, TCPC_VBUS_SOURCE_0V, 0);
+	tcpc_disable_timer(tcpc, TYPEC_TRY_TIMER_DRP_TRY);
+	tcpc_enable_timer(tcpc, TYPEC_TRY_TIMER_DRP_TRY);
+}
+#endif
 
 #endif /* CONFIG_TYPEC_CAP_TRY_SOURCE */
 
@@ -1349,6 +1407,12 @@ static inline void typec_debug_acc_attached_entry(struct tcpc_device *tcpc)
 	tcpci_source_vbus(tcpc,
 			TCP_VBUS_CTRL_TYPEC, TCPC_VBUS_SOURCE_5V, -1);
 #endif	/* CONFIG_TYPEC_CAP_DBGACC */
+
+#ifdef CONFIG_LGE_USB_TYPE_C
+	TYPEC_NEW_STATE(typec_debugaccessory);
+	TYPEC_DBG("[Debug] CC1&2 Both Rd\n");
+	tcpc->typec_attach_new = TYPEC_ATTACHED_DEBUG;
+#endif
 }
 
 #ifdef CONFIG_TYPEC_CAP_AUDIO_ACC_SINK_VBUS
@@ -1526,7 +1590,13 @@ bool tcpc_typec_is_act_as_sink_role(struct tcpc_device *tcpc)
 
 static inline bool typec_handle_cc_changed_entry(struct tcpc_device *tcpc)
 {
+#ifdef CONFIG_LGE_USB_TYPE_C
+	TYPEC_INFO("[CC_Change] CC1: %s / CC2: %s\n",
+		tcpc_cc_voltage_status_string[typec_get_cc1()],
+		tcpc_cc_voltage_status_string[typec_get_cc2()]);
+#else
 	TYPEC_INFO("[CC_Change] %d/%d\n", typec_get_cc1(), typec_get_cc2());
+#endif
 
 	tcpc->typec_attach_new = tcpc->typec_attach_old;
 
@@ -2034,7 +2104,13 @@ int tcpc_typec_handle_cc_change(struct tcpc_device *tcpc)
 	if (ret < 0)
 		return ret;
 
+#ifdef CONFIG_LGE_USB_TYPE_C
+	TYPEC_INFO("[CC_Alert] CC1: %s / CC2: %s\n",
+		tcpc_cc_voltage_status_string[typec_get_cc1()],
+		tcpc_cc_voltage_status_string[typec_get_cc2()]);
+#else
 	TYPEC_INFO("[CC_Alert] %d/%d\n", typec_get_cc1(), typec_get_cc2());
+#endif
 
 	if (typec_is_cc_no_res()) {
 		TYPEC_DBG("[Warning] CC No Res\n");
@@ -2357,6 +2433,19 @@ int tcpc_typec_handle_timeout(struct tcpc_device *tcpc, uint32_t timer_id)
 
 		if (!tcpci_check_vbus_valid_from_ic(tcpc))
 			ret = tcpc_typec_handle_vsafe0v(tcpc);
+#ifdef CONFIG_LGE_USB_TYPE_C
+#ifdef CONFIG_LGE_PM_USB_ID
+		else if (lge_get_laf_mode() || lge_get_laf_mid()){
+			typec_debug_acc_attached_entry(tcpc);
+			typec_alert_attach_state_change(tcpc);
+			TCPC_INFO("W/A D_Attached\n");
+		}
+#endif
+#ifdef CONFIG_TYPEC_CAP_TRY_SOURCE
+		else
+			typec_trywait_snk_vbus_entry(tcpc);
+#endif
+#endif
 		break;
 #endif	/* CONFIG_TYPEC_ATTACHED_SRC_SAFE0V_TIMEOUT */
 
@@ -2738,6 +2827,11 @@ static int typec_init_power_off_charge(struct tcpc_device *tcpc)
 
 	if (!tcpci_check_vbus_valid(tcpc))
 		return 0;
+
+#ifdef CONFIG_LGE_PM_USB_ID
+	if (lge_is_factory_cable_boot())
+		return 0;
+#endif
 
 	TYPEC_INFO2("PowerOffCharge\n");
 

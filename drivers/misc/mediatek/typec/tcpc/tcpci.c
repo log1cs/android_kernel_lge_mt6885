@@ -977,3 +977,64 @@ int tcpci_notify_request_bat_info(
 
 #endif	/* CONFIG_USB_POWER_DELIVERY */
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+void ds3_tcpc_check_notify_DP_STATE(struct tcpc_device *tcpc)
+{
+	struct tcp_notify tcp_noti;
+	uint32_t dp_config	= 0x0805;
+
+	tcp_noti.ama_dp_state.sel_config = SW_DFP_D;
+	tcp_noti.ama_dp_state.pin_assignment = (dp_config >> 8) & 0xff;
+	pr_info("DS3 pin assignment: 0x%x\r\n", tcp_noti.ama_dp_state.pin_assignment);
+	tcp_noti.ama_dp_state.signal = (dp_config >> 2) & 0x0f;
+	tcp_noti.ama_dp_state.polarity = 1;		/* or 0 ? */
+	tcp_noti.ama_dp_state.active = 1;
+	tcpc_check_notify_time(tcpc, &tcp_noti, TCP_NOTIFY_IDX_MODE, TCP_NOTIFY_AMA_DP_STATE);
+}
+
+void ds3_tcpc_check_notify_DP_ATTENTION(struct tcpc_device *tcpc)
+{
+	struct tcp_notify tcp_noti;
+	uint32_t dp_status	= 0x8A;		/* 0x0A ? */
+
+	pr_info("DS3 Attention: 0x%x\r\n", dp_status);
+	tcp_noti.ama_dp_attention.state = (uint8_t) dp_status;
+	tcpc_check_notify_time(tcpc, &tcp_noti, TCP_NOTIFY_IDX_MODE, TCP_NOTIFY_AMA_DP_ATTENTION);
+}
+
+void ds3_tcpc_check_notify_DP_HPD_STATE(struct tcpc_device *tcpc)
+{
+	struct tcp_notify tcp_noti;
+
+	pr_info("DS3 HPD STATE START\n");
+
+	tcp_noti.ama_dp_hpd_state.irq	= 0;
+	tcp_noti.ama_dp_hpd_state.state	= 1;
+	tcpc_check_notify_time(tcpc, &tcp_noti, TCP_NOTIFY_IDX_MODE, TCP_NOTIFY_AMA_DP_HPD_STATE);
+}
+
+void ds3_tcpc_check_notify_DP_HPD_STATE_OFF(struct tcpc_device *tcpc)
+{
+	struct tcp_notify tcp_noti;
+
+	pr_info("DS3 HPD STATE END\n");
+
+	tcp_noti.ama_dp_hpd_state.irq	= 0;
+	tcp_noti.ama_dp_hpd_state.state	= 0;
+	tcpc_check_notify_time(tcpc, &tcp_noti,	TCP_NOTIFY_IDX_MODE, TCP_NOTIFY_AMA_DP_HPD_STATE);
+}
+#endif
+
+#ifdef CONFIG_LGE_USB_MOISTURE_DETECTION
+void tcpci_notify_moisture_detection(struct tcpc_device *tcpc, bool moisture_detected)
+{
+	struct tcp_notify tcp_noti;
+	tcpc->is_mositure_detected = moisture_detected;
+
+	/* TD0040021072 */
+	tcp_noti.m_status.status  = moisture_detected;
+	pr_info("TCPCI MOISTURE: %d\n", moisture_detected);
+	tcpc_check_notify_time(tcpc, &tcp_noti,	TCP_NOTIFY_IDX_MISC, TCP_NOTIFY_LGE_MOSITURE_STATE);
+}
+#endif
+

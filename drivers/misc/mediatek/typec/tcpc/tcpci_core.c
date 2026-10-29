@@ -15,6 +15,11 @@
 #include "inc/tcpci.h"
 #include "inc/tcpci_typec.h"
 
+#ifdef CONFIG_LGE_DUAL_SCREEN
+struct tcpc_device *g_tcpc = NULL;
+EXPORT_SYMBOL(g_tcpc);
+#endif
+
 #ifdef CONFIG_USB_POWER_DELIVERY
 #include "pd_dpm_prv.h"
 #include "inc/tcpm.h"
@@ -447,6 +452,10 @@ struct tcpc_device *tcpc_device_register(struct device *parent,
 #ifdef CONFIG_USB_POWER_DELIVERY
 	pd_core_init(tcpc);
 #endif /* CONFIG_USB_POWER_DELIVERY */
+
+#ifdef CONFIG_LGE_DUAL_SCREEN
+	g_tcpc = tcpc;
+#endif
 
 	return tcpc;
 }
