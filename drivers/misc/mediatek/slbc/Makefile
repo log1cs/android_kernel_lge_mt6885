@@ -12,6 +12,7 @@
 #
 
 ccflags-y += \
+	-I$(srctree)/drivers/misc/mediatek/slbc \
 	-I$(srctree)/drivers/misc/mediatek/include \
 	-I$(srctree)/drivers/misc/mediatek/include/mt-plat \
 	-I$(srctree)/drivers/misc/mediatek/sspm \
