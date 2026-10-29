@@ -18,6 +18,7 @@ endif
 PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 
 ccflags-y += \
+	-I$(srctree)/drivers/soc/mediatek/devmpu \
 	-I$(srctree)/drivers/misc/mediatek/emi/$(PLATFORM) \
 	-I$(srctree)/drivers/misc/mediatek/emi/submodule \
 	-I$(srctree)/include/memory/mediatek

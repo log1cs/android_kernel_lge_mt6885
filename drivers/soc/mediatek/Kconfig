@@ -125,5 +125,7 @@ config MTK_SOCINFO
 	  export Soc information by unified Android property for APP
 	  vendor, instead of sysfs which maintained by each SoC vendor.
 
+source "drivers/soc/mediatek/lge/Kconfig"
+
 endmenu
 
